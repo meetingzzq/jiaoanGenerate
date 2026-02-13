@@ -17,7 +17,8 @@ function App() {
     授课班级: '电气自动化（2）班',
     专业名称: '电气自动化',
     课程名称: '电子焊接',
-    授课教师: '张老师'
+    授课教师: '张老师',
+    课程描述: ''
   });
 
   // 课时列表
@@ -596,6 +597,22 @@ function App() {
                   value={fixedInfo.授课教师} 
                   onChange={(e) => setFixedInfo({ ...fixedInfo, 授课教师: e.target.value })} 
                   className="ghibli-input"
+                />
+              </Form.Item>
+            </div>
+            <div className="form-row">
+              <Form.Item
+                label={<span className="description-label">📋 课程描述 <span className="description-hint">（选填：描述整个课程的目标、特点、学生情况等，对所有教案生效）</span></span>}
+                className="ghibli-form-item form-col-full"
+              >
+                <TextArea
+                  value={fixedInfo.课程描述}
+                  onChange={(e) => setFixedInfo({ ...fixedInfo, 课程描述: e.target.value })}
+                  className="ghibli-textarea"
+                  placeholder="例如：本课程是电气自动化专业的核心课程，主要培养学生的电子焊接技能。学生已具备基础电路理论知识，但缺乏实际操作经验。课程注重理论与实践相结合..."
+                  rows={3}
+                  showCount
+                  maxLength={2000}
                 />
               </Form.Item>
             </div>

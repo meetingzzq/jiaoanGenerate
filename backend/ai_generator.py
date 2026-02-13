@@ -133,12 +133,25 @@ def generate_lesson_plan(course_info: dict) -> dict:
 
 def _build_prompt(course_info: dict) -> str:
     """构建请求大模型的Prompt"""
+    # 获取课程描述（全局描述，对整个课程生效）
+    course_description = course_info.get('课程描述', '').strip()
+
     # 获取用户描述（如果有）
     user_description = course_info.get('用户描述', '').strip()
-    
+
     # 获取参考文档内容（如果有）
     reference_documents = course_info.get('参考文档', [])
-    
+
+    # 构建课程描述部分（全局）
+    course_desc_section = ""
+    if course_description:
+        course_desc_section = f"""
+
+【课程整体描述】
+{course_description}
+
+请特别注意：以上是对整个课程的总体描述，包括课程目标、学生情况、教学特点等。在生成本节课教案时，请结合课程整体背景进行设计，确保本节课与整体课程目标和教学计划保持一致。"""
+
     # 构建用户描述部分
     user_desc_section = ""
     if user_description:
@@ -184,7 +197,7 @@ def _build_prompt(course_info: dict) -> str:
 - 专业名称：{course_info.get('专业名称', '')}
 - 课程名称：{course_info.get('课程名称', '')}
 - 授课班级：{course_info['授课班级']}
-- 授课学时：{course_info.get('授课学时', '')}{user_desc_section}{doc_section}
+- 授课学时：{course_info.get('授课学时', '')}{course_desc_section}{user_desc_section}{doc_section}
 
 请严格按照以下JSON格式返回（不要添加任何其他文字说明，只返回JSON）
 避免error：Expecting ',' delimiter: line 29 column 5 (char 1311)：

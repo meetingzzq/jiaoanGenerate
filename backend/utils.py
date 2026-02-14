@@ -74,7 +74,6 @@ def parse_lesson_plan_json(content: str) -> dict:
         data = json.loads(content)
         return data
     except json.JSONDecodeError as e:
-        print(f"     ⚠️ JSON解析失败，尝试修复...")
         # 尝试找到JSON的起始和结束位置
         json_match = re.search(r'\{[\s\S]*\}', content)
         if json_match:

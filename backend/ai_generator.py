@@ -107,8 +107,10 @@ def generate_lesson_plan(course_info: dict) -> dict:
         except Exception as e:
             logger.error(f"     ❌ 处理失败：{e}")
             last_error = str(e)
-            if 'content' in locals():
+            try:
                 last_content = content
+            except NameError:
+                pass
             retry_count += 1
             if retry_count < max_retries:
                 logger.info("     🔄 准备重试...")

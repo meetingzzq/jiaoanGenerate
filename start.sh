@@ -1,3 +1,3 @@
 #!/bin/bash
 cd backend
-python3.11 api_server.py
+python api_server.py

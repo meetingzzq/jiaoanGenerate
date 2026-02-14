@@ -5,6 +5,7 @@ flask==3.0.3
 flask-cors==4.0.1
 python-dotenv==1.0.1
 gunicorn==21.2.0
+gevent==23.9.1
 
 # 文档处理依赖
 python-pptx==0.6.23

@@ -243,11 +243,34 @@ function App() {
     }
   };
 
-  const handleDeleteDocument = (lessonId, filename) => {
-    setLessonDocuments(prev => ({
-      ...prev,
-      [lessonId]: (prev[lessonId] || []).filter(doc => doc.filename !== filename)
-    }));
+  const handleDeleteDocument = async (lessonId, filename) => {
+    try {
+      // 调用后端API删除文档
+      const response = await axios.delete(
+        `${API_BASE_URL}/api/documents/${lessonId}/${encodeURIComponent(filename)}`
+      );
+      
+      if (response.data.success) {
+        // 前端状态更新
+        setLessonDocuments(prev => ({
+          ...prev,
+          [lessonId]: (prev[lessonId] || []).filter(doc => doc.filename !== filename)
+        }));
+        
+        // 添加成功日志
+        const successLog = {
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          message: `✅ 文档已删除: ${filename}`,
+          level: 'success'
+        };
+        setBackendLogs(prev => [...prev, successLog]);
+      } else {
+        alert(response.data.message || '删除失败');
+      }
+    } catch (error) {
+      console.error('删除文档失败:', error);
+      alert(error.response?.data?.message || '删除文档失败');
+    }
   };
 
   const formatFileSize = (bytes) => {
@@ -290,7 +313,7 @@ function App() {
     setGenerationResults([]);
     setBackendLogs([]);
     lastLogIndexRef.current = 0;
-    setActiveTab('logs');
+    setActiveTab('loading');
 
     try {
       const sessionResponse = await axios.post(`${API_BASE_URL}/api/session`);
@@ -634,17 +657,18 @@ function App() {
             </div>
           </section>
 
-          {(backendLogs.length > 0 || generationResults.length > 0 || isGenerating) && (
+          {(generationResults.length > 0 || isGenerating) && (
             <section className="status-section">
               <div className="tabs">
-                <button 
-                  className={`tab ${activeTab === 'logs' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('logs')}
-                >
-                  {isGenerating && <span className="spinner small"></span>}
-                  实时日志
-                  {backendLogs.length > 0 && <span className="tab-badge">{backendLogs.length}</span>}
-                </button>
+                {isGenerating && (
+                  <button 
+                    className={`tab ${activeTab === 'loading' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('loading')}
+                  >
+                    <span className="pulse-dot"></span>
+                    生成中
+                  </button>
+                )}
                 <button 
                   className={`tab ${activeTab === 'results' ? 'active' : ''}`}
                   onClick={() => setActiveTab('results')}
@@ -655,22 +679,28 @@ function App() {
               </div>
 
               <div className="tab-content">
-                {activeTab === 'logs' && (
-                  <div className="logs-panel">
-                    {isGenerating && currentTopic && (
-                      <div className="current-task">
-                        <span className="spinner"></span>
-                        正在生成: {currentTopic}
+                {activeTab === 'loading' && isGenerating && (
+                  <div className="loading-panel">
+                    <div className="loading-animation">
+                      <div className="orbit">
+                        <div className="planet"></div>
+                        <div className="satellite s1"></div>
+                        <div className="satellite s2"></div>
+                        <div className="satellite s3"></div>
                       </div>
-                    )}
-                    <div className="logs-list">
-                      {backendLogs.map((log, index) => (
-                        <div key={index} className="log-item" style={getLogStyle(log)}>
-                          <span className="log-time">[{log.time}]</span>
-                          <span className="log-message">{log.message}</span>
-                        </div>
-                      ))}
-                      <div ref={logsEndRef} />
+                    </div>
+                    <div className="loading-text">
+                      <h3>正在生成教案</h3>
+                      <p className="loading-topic">{currentTopic || '准备中...'}</p>
+                      <div className="loading-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
+                    </div>
+                    <div className="loading-status">
+                      <span className="status-icon">✨</span>
+                      <span>AI 正在为您精心编写...</span>
                     </div>
                   </div>
                 )}

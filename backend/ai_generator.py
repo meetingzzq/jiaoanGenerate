@@ -8,6 +8,7 @@ import time
 import logging
 import requests
 from config import DEEPSEEK_API_URL, MODEL_CONFIG
+
 from utils import parse_lesson_plan_json
 
 logger = logging.getLogger('jiaoan')
@@ -58,7 +59,7 @@ def generate_lesson_plan(course_info: dict) -> dict:
             if last_error:
                 logger.warning(f"     ⚠️  上次错误：{last_error}")
             
-            response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=60)
+            response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=120)
             
             if response.status_code == 401:
                 logger.error("     ❌ API Key无效或已过期")
@@ -351,4 +352,4 @@ def _save_prompt_to_file(course_info: dict, prompt: str):
 
         logger.info(f"     💾 提示词已保存到: {filename}")
     except Exception as e:
-        logger.warning(f"     ⚠️  保存提示词失败: {e}")
+        pass

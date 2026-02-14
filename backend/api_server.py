@@ -77,78 +77,6 @@ def load_session_from_file(session_id):
         logging.error(f"加载会话文件失败: {e}")
     return None
 
-class SessionLogHandler(logging.Handler):
-    """自定义日志处理器，将日志直接添加到session并打印到终端"""
-    def __init__(self, session_id):
-        super().__init__()
-        self.session_id = session_id
-    
-    def emit(self, record):
-        try:
-            msg = self.format(record)
-            level = 'info'
-            if record.levelno >= logging.ERROR:
-                level = 'error'
-            elif record.levelno >= logging.WARNING:
-                level = 'warning'
-            elif '✅' in msg or '成功' in msg or '完成' in msg or '🎉' in msg:
-                level = 'success'
-            elif '📖' in msg or '📝' in msg or '📚' in msg or '📎' in msg:
-                level = 'progress'
-            
-            log_entry = {
-                'time': time.strftime('%H:%M:%S'),
-                'message': msg,
-                'level': level
-            }
-            
-            # 直接添加到session的logs中
-            with sessions_lock:
-                if self.session_id in generation_sessions:
-                    generation_sessions[self.session_id]['logs'].append(log_entry)
-            
-            # 同时打印到终端，使用原始stdout避免递归
-            import sys
-            original_stdout = sys.__stdout__
-            original_stdout.write(f"[{log_entry['time']}] {msg}\n")
-            original_stdout.flush()
-        except Exception:
-            self.handleError(record)
-
-
-class SessionLogger:
-    """专门的会话日志记录器，用于向前端发送日志"""
-    def __init__(self, session_id):
-        self.session_id = session_id
-        self.logger = logging.getLogger(f'session_{session_id}')
-        self.logger.setLevel(logging.DEBUG)
-        self.logger.handlers = []
-        
-        self.handler = SessionLogHandler(session_id)
-        self.handler.setFormatter(logging.Formatter('%(message)s'))
-        self.logger.addHandler(self.handler)
-    
-    def info(self, message):
-        self.logger.info(message)
-    
-    def warning(self, message):
-        self.logger.warning(message)
-    
-    def error(self, message):
-        self.logger.error(message)
-    
-    def success(self, message):
-        self.logger.info(message)
-    
-    def debug(self, message):
-        self.logger.debug(message)
-    
-    def __enter__(self):
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.logger.removeHandler(self.handler)
-
 
 
 
@@ -160,8 +88,7 @@ def update_session(session_id, data):
                 'created_at': datetime.now().isoformat(),
                 'status': 'pending',
                 'progress': 0,
-                'results': [],
-                'logs': []
+                'results': []
             }
         generation_sessions[session_id].update(data)
         generation_sessions[session_id]['updated_at'] = datetime.now().isoformat()

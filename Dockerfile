@@ -17,14 +17,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Set environment variables
-ENV PORT=8000
 ENV PYTHONUNBUFFERED=1
 
+# Use Railway's PORT or default to 8080
+ENV PORT=8080
+
 # Expose the port
-EXPOSE $PORT
+EXPOSE 8080
 
 # Set working directory to backend
 WORKDIR /app/backend
 
 # Run the application with gunicorn
-CMD gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 300
+CMD gunicorn api_server:app --bind 0.0.0.0:8080 --timeout 300

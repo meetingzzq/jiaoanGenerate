@@ -56,7 +56,7 @@ generation_sessions = {}
 sessions_lock = threading.Lock()
 
 class SessionLogHandler(logging.Handler):
-    """自定义日志处理器，将日志发送到前端队列"""
+    """自定义日志处理器，将日志直接添加到session并打印到终端"""
     def __init__(self, session_id):
         super().__init__()
         self.session_id = session_id
@@ -74,13 +74,19 @@ class SessionLogHandler(logging.Handler):
             elif '📖' in msg or '📝' in msg or '📚' in msg or '📎' in msg:
                 level = 'progress'
             
-            with log_queues_lock:
-                if self.session_id in log_queues:
-                    log_queues[self.session_id].put({
-                        'time': time.strftime('%H:%M:%S'),
-                        'message': msg,
-                        'level': level
-                    })
+            log_entry = {
+                'time': time.strftime('%H:%M:%S'),
+                'message': msg,
+                'level': level
+            }
+            
+            # 直接添加到session的logs中
+            with sessions_lock:
+                if self.session_id in generation_sessions:
+                    generation_sessions[self.session_id]['logs'].append(log_entry)
+            
+            # 同时打印到终端
+            print(f"[{log_entry['time']}] {msg}")
         except Exception:
             self.handleError(record)
 
@@ -189,10 +195,13 @@ def get_session(session_id):
         return generation_sessions.get(session_id)
 
 
-def add_log_to_session(session_id, log_entry):
+def add_log_to_session(session_id, log_entries):
     with sessions_lock:
         if session_id in generation_sessions:
-            generation_sessions[session_id]['logs'].append(log_entry)
+            if isinstance(log_entries, list):
+                generation_sessions[session_id]['logs'].extend(log_entries)
+            else:
+                generation_sessions[session_id]['logs'].append(log_entries)
 
 
 @app.route('/api/session', methods=['POST'])
@@ -234,19 +243,6 @@ def poll_logs(session_id):
     
     if not session:
         return jsonify({'success': False, 'message': '会话不存在'}), 404
-    
-    with log_queues_lock:
-        log_queue = log_queues.get(session_id)
-        new_logs = []
-        if log_queue:
-            while not log_queue.empty():
-                try:
-                    new_logs.append(log_queue.get_nowait())
-                except queue.Empty:
-                    break
-    
-    if new_logs:
-        add_log_to_session(session_id, new_logs)
     
     all_logs = session.get('logs', [])
     logs_to_return = all_logs[last_index:]
@@ -401,15 +397,14 @@ def batch_generate():
         'current_lesson': 0
     })
     
-    log_capture = LogCapture(session_id)
-    old_stdout = sys.stdout
-    sys.stdout = log_capture
-    
     session_logger = SessionLogger(session_id)
     
+    # 配置 jiaoan logger，使其日志同时发送到前端和终端
     jiaoan_logger = logging.getLogger('jiaoan')
     jiaoan_logger.setLevel(logging.DEBUG)
-    jiaoan_logger.handlers = []
+    # 清除现有的 handlers，避免重复
+    for handler in jiaoan_logger.handlers[:]:
+        jiaoan_logger.removeHandler(handler)
     jiaoan_logger.addHandler(session_logger.handler)
     
     try:
@@ -519,7 +514,9 @@ def batch_generate():
         update_session(session_id, {'status': 'error', 'error': str(e)})
         return jsonify({'success': False, 'message': f'生成失败: {str(e)}'}), 500
     finally:
-        sys.stdout = old_stdout
+        # 清理 jiaoan logger 的 handler
+        jiaoan_logger = logging.getLogger('jiaoan')
+        jiaoan_logger.removeHandler(session_logger.handler)
 
 
 @app.route('/api/upload-document', methods=['POST'])

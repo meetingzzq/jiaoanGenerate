@@ -41,6 +41,7 @@ uploaded_documents = {}
 
 app = Flask(__name__)
 CORS(app)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 STATIC_DIR = os.path.join(BASE_DIR, 'frontend', 'dist')
 OUTPUT_DIR = os.path.join(DATA_DIR, 'output')

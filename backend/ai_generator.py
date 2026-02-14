@@ -56,6 +56,8 @@ def generate_lesson_plan(course_info: dict) -> dict:
             }
             
             logger.info(f"     ⏳ 发送请求到DeepSeek API... (尝试 {retry_count + 1}/{max_retries})")
+            logger.info(f"     📊 请求体大小: {len(json.dumps(data))} 字节")
+            logger.info(f"     🌐 API URL: {DEEPSEEK_API_URL}")
             if last_error:
                 logger.warning(f"     ⚠️  上次错误：{last_error}")
             
@@ -87,12 +89,16 @@ def generate_lesson_plan(course_info: dict) -> dict:
                 logger.error("     ❌ API Key无效或已过期")
                 return {"error": "invalid_api_key", "message": "API Key无效或已过期，请检查您的DeepSeek API Key"}
             logger.error(f"     ❌ HTTP请求失败：{e}")
+            logger.error(f"     📋 响应状态码: {response.status_code}")
+            logger.error(f"     📋 响应内容: {response.text[:500] if hasattr(response, 'text') else 'N/A'}")
             retry_count += 1
             if retry_count < max_retries:
                 logger.info("     🔄 准备重试...")
             continue
         except requests.exceptions.RequestException as e:
             logger.error(f"     ❌ API请求失败：{e}")
+            logger.error(f"     📋 错误类型: {type(e).__name__}")
+            logger.error(f"     📋 错误详情: {str(e)}")
             retry_count += 1
             if retry_count < max_retries:
                 logger.info("     🔄 准备重试...")

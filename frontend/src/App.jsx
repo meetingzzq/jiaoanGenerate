@@ -202,14 +202,37 @@ function App() {
           ...prev,
           [lessonId]: [...(prev[lessonId] || []), response.data.document]
         }));
+        // 添加成功日志到前端日志显示
+        const successLog = {
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          message: response.data.message || `✅ 文档上传成功: ${file.name}`,
+          level: 'success'
+        };
+        setBackendLogs(prev => [...prev, successLog]);
         return true;
       } else {
-        alert(response.data.message || '上传失败');
+        const errorMsg = response.data.message || '上传失败';
+        // 添加错误日志到前端日志显示
+        const errorLog = {
+          time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          message: errorMsg,
+          level: 'error'
+        };
+        setBackendLogs(prev => [...prev, errorLog]);
+        alert(errorMsg);
         return false;
       }
     } catch (error) {
       console.error('上传文档失败:', error);
-      alert(error.response?.data?.message || '上传文档失败');
+      const errorMsg = error.response?.data?.message || `❌ 上传文档失败: ${file.name}`;
+      // 添加错误日志到前端日志显示
+      const errorLog = {
+        time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+        message: errorMsg,
+        level: 'error'
+      };
+      setBackendLogs(prev => [...prev, errorLog]);
+      alert(errorMsg);
       return false;
     } finally {
       setUploadingFiles(prev => {

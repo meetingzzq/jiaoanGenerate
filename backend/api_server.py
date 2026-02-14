@@ -558,8 +558,19 @@ def upload_document():
         content = extract_document_content(file_path)
         
         if content is None:
-            print(f"警告: 无法提取文档内容，但文件存在")
-            content = ""
+            error_msg = f"❌ 文档解析失败: {file.filename} - 无法提取文档内容，请检查文件格式是否正确或文件是否损坏"
+            print(error_msg)
+            # 删除上传的文件
+            try:
+                os.remove(file_path)
+            except:
+                pass
+            return jsonify({
+                'success': False,
+                'message': error_msg,
+                'error_type': 'parse_failed',
+                'filename': file.filename
+            }), 400
         
         content_summary = content[:500] if content else ""
         
@@ -577,11 +588,12 @@ def upload_document():
             uploaded_documents[lesson_id] = []
         uploaded_documents[lesson_id].append(doc_info)
         
-        print(f"文档内容提取成功，字符数: {len(content)}")
+        success_msg = f"✅ 文档上传成功: {file.filename} (字符数: {len(content)})"
+        print(success_msg)
         
         return jsonify({
             'success': True,
-            'message': '文档上传成功',
+            'message': success_msg,
             'document': {
                 'filename': file.filename,
                 'file_size': doc_info['file_size'],

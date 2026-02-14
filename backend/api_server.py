@@ -2,13 +2,14 @@
 API服务器 - 提供前端调用的接口
 """
 import os
-import json
 import sys
 import io
+import json
 import queue
 import threading
 import time
 import uuid
+import logging
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
@@ -54,6 +55,44 @@ log_queues_lock = threading.Lock()
 generation_sessions = {}
 sessions_lock = threading.Lock()
 
+class SessionLogger:
+    """专门的会话日志记录器，用于向前端发送日志"""
+    def __init__(self, session_id):
+        self.session_id = session_id
+        self.original_stdout = sys.stdout
+        
+    def log(self, message, level='info'):
+        """发送日志到前端"""
+        if message.strip():
+            with log_queues_lock:
+                if self.session_id in log_queues:
+                    log_queues[self.session_id].put({
+                        'time': time.strftime('%H:%M:%S'),
+                        'message': message.strip(),
+                        'level': level
+                    })
+        print(message)
+        sys.stdout.flush()
+    
+    def info(self, message):
+        self.log(message, 'info')
+    
+    def warning(self, message):
+        self.log(message, 'warning')
+    
+    def error(self, message):
+        self.log(message, 'error')
+    
+    def success(self, message):
+        self.log(message, 'success')
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
 class LogCapture:
     def __init__(self, session_id):
         self.session_id = session_id
@@ -65,11 +104,23 @@ class LogCapture:
         self.original_stdout.flush()
         
         if message.strip():
+            level = 'info'
+            msg = message.strip()
+            if '❌' in msg or '失败' in msg or '错误' in msg or 'Error' in msg:
+                level = 'error'
+            elif '✅' in msg or '成功' in msg or '完成' in msg or '🎉' in msg:
+                level = 'success'
+            elif '⚠️' in msg or '警告' in msg or 'Warning' in msg:
+                level = 'warning'
+            elif '📖' in msg or '📝' in msg or '📚' in msg or '📎' in msg:
+                level = 'progress'
+            
             with log_queues_lock:
                 if self.session_id in log_queues:
                     log_queues[self.session_id].put({
                         'time': time.strftime('%H:%M:%S'),
-                        'message': message.strip()
+                        'message': message.strip(),
+                        'level': level
                     })
     
     def flush(self):
@@ -328,6 +379,8 @@ def batch_generate():
     old_stdout = sys.stdout
     sys.stdout = log_capture
     
+    logger = SessionLogger(session_id)
+    
     try:
         data = request.json
         if not data:
@@ -351,7 +404,10 @@ def batch_generate():
             }), 400
         
         os.environ['DEEPSEEK_API_KEY'] = api_key
-        print("使用用户提供的DeepSeek API Key")
+        logger.info("=" * 50)
+        logger.info("🎯 开始批量生成教案")
+        logger.info(f"📚 总课时数: {len(variable_course_infos)}")
+        logger.info("=" * 50)
 
         complete_fixed_info = {**DEFAULT_FIXED_COURSE_INFO, **fixed_course_info}
         
@@ -362,6 +418,8 @@ def batch_generate():
         
         for i, lesson in enumerate(variable_course_infos, 1):
             lesson_id = str(lesson.get('id', ''))
+            logger.info(f"📖 正在生成课时 {i}/{total_lessons}: {lesson.get('课题名称', '未命名')}")
+            
             if lesson_id and lesson_id in uploaded_documents:
                 docs = uploaded_documents[lesson_id]
                 if docs:
@@ -369,7 +427,7 @@ def batch_generate():
                         {'filename': doc['filename'], 'content': doc['content']}
                         for doc in docs
                     ]
-                    print(f"课时 {lesson_id}: 已关联 {len(docs)} 个参考文档")
+                    logger.info(f"📎 已关联 {len(docs)} 个参考文档: {', '.join([d['filename'] for d in docs])}")
             
             progress = int((i / total_lessons) * 100)
             topic = lesson.get('课题名称', f'课时{i}')
@@ -384,6 +442,8 @@ def batch_generate():
             output_path = os.path.join(OUTPUT_DIR, file_name)
             
             course_info = {**complete_fixed_info, **lesson}
+            
+            logger.info("📝 正在调用 AI 生成教案内容...")
             
             template_path = os.path.join(BASE_DIR, 'moban.docx')
             success = generate_lesson_plan_doc(
@@ -400,12 +460,14 @@ def batch_generate():
                     'file_name': file_name,
                     'file_url': f'/download/{file_name}'
                 })
+                logger.success(f"✅ 课时 {i} 生成成功: {topic}")
             else:
                 results.append({
                     'topic': topic,
                     'status': '失败',
                     'message': '文件未生成'
                 })
+                logger.error(f"❌ 课时 {i} 生成失败: {topic}")
             
             update_session(session_id, {'results': results})
         
@@ -415,9 +477,14 @@ def batch_generate():
             'results': results
         })
         
+        logger.info("=" * 50)
+        logger.success(f"🎉 全部完成！成功 {len([r for r in results if r['status'] == '成功'])} 个，失败 {len([r for r in results if r['status'] == '失败'])} 个")
+        logger.info("=" * 50)
+        
         return jsonify({'success': True, 'results': results})
 
     except Exception as e:
+        logger.error(f"生成失败: {str(e)}")
         update_session(session_id, {'status': 'error', 'error': str(e)})
         return jsonify({'success': False, 'message': f'生成失败: {str(e)}'}), 500
     finally:
@@ -477,9 +544,7 @@ def upload_document():
             'upload_time': time.strftime('%Y-%m-%d %H:%M:%S')
         }
         
-        if lesson_id not in uploaded_documents:
-            uploaded_documents[lesson_id] = []
-        uploaded_documents[lesson_id].append(doc_info)
+        uploaded_documents[lesson_id] = [doc_info]
         
         print(f"文档内容提取成功，字符数: {len(content)}")
         

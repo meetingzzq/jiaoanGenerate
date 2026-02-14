@@ -5,9 +5,12 @@ import json
 import os
 import sys
 import time
+import logging
 import requests
 from config import DEEPSEEK_API_URL, MODEL_CONFIG
 from utils import parse_lesson_plan_json
+
+logger = logging.getLogger('jiaoan')
 
 
 def get_api_key() -> str:
@@ -16,25 +19,14 @@ def get_api_key() -> str:
 
 
 def generate_lesson_plan(course_info: dict) -> dict:
-    """
-    调用DeepSeek API一次性生成教案所有模块内容
-    当数据解析失败时，会自动重试直到成功，并告知大模型具体的错误原因
-    
-    Args:
-        course_info: 课程信息字典
-        
-    Returns:
-        解析后的教案数据字典，如果API Key无效返回 {"error": "invalid_api_key"}
-    """
-    print("\n  📝 正在调用DeepSeek API生成完整教案内容...")
+    logger.info("  📝 正在调用DeepSeek API生成完整教案内容...")
     
     api_key = get_api_key()
     if not api_key:
-        print("     ❌ 未设置API Key")
+        logger.error("     ❌ 未设置API Key")
         return {"error": "invalid_api_key", "message": "未设置DeepSeek API Key"}
     
-    # 打印API Key前10位用于调试（隐藏完整Key）
-    print(f"     🔑 使用API Key: {api_key[:10]}...{api_key[-4:] if len(api_key) > 14 else ''} (长度: {len(api_key)})")
+    logger.info(f"     🔑 使用API Key: {api_key[:10]}...{api_key[-4:] if len(api_key) > 14 else ''} (长度: {len(api_key)})")
     
     headers = {
         "Content-Type": "application/json",
@@ -46,15 +38,12 @@ def generate_lesson_plan(course_info: dict) -> dict:
     last_error = None
     last_content = None
 
-    # 构建prompt
     prompt = _build_prompt(course_info)
 
-    # 保存prompt到文件
     _save_prompt_to_file(course_info, prompt)
 
     while retry_count < max_retries:
         try:
-            # 如果有之前的错误，添加错误信息到prompt
             current_prompt = prompt
             if last_error and last_content:
                 error_prompt = f"\n\n--- 之前的生成结果解析失败 ---\n错误原因：{last_error}\n返回内容：{last_content[:500]}...\n\n请重新生成，确保返回的是纯JSON格式，不要包含任何其他文字说明。"
@@ -65,69 +54,67 @@ def generate_lesson_plan(course_info: dict) -> dict:
                 "messages": [{"role": "user", "content": current_prompt}]
             }
             
-            print(f"     ⏳ 发送请求到DeepSeek API... (尝试 {retry_count + 1}/{max_retries})")
+            logger.info(f"     ⏳ 发送请求到DeepSeek API... (尝试 {retry_count + 1}/{max_retries})")
             if last_error:
-                print(f"     ⚠️  上次错误：{last_error}")
+                logger.warning(f"     ⚠️  上次错误：{last_error}")
             
             response = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=60)
             
-            # 检查API Key是否无效
             if response.status_code == 401:
-                print("     ❌ API Key无效或已过期")
+                logger.error("     ❌ API Key无效或已过期")
                 return {"error": "invalid_api_key", "message": "API Key无效或已过期，请检查您的DeepSeek API Key"}
             
             response.raise_for_status()
             result = response.json()
             content = result["choices"][0]["message"]["content"].strip()
             
-            print("     ✅ API调用成功，正在解析数据...")
-            print("     📄 模型返回内容:")
-            print("     " + "-" * 60)
-            # 显示模型返回的内容（最多显示1000个字符）
+            logger.info("     ✅ API调用成功，正在解析数据...")
+            logger.info("     📄 模型返回内容:")
+            logger.info("     " + "-" * 60)
             if len(content) > 1000:
-                print("     " + content[:1000] + "...")
+                logger.info("     " + content[:1000] + "...")
             else:
-                print("     " + content)
-            print("     " + "-" * 60)
+                logger.info("     " + content)
+            logger.info("     " + "-" * 60)
             
             parsed_data = parse_lesson_plan_json(content)
-            print("     ✅ 数据解析完成")
+            logger.info("     ✅ 数据解析完成")
             return parsed_data
             
         except requests.exceptions.HTTPError as e:
             if response.status_code == 401:
-                print("     ❌ API Key无效或已过期")
+                logger.error("     ❌ API Key无效或已过期")
                 return {"error": "invalid_api_key", "message": "API Key无效或已过期，请检查您的DeepSeek API Key"}
-            print(f"     ❌ HTTP请求失败：{e}")
+            logger.error(f"     ❌ HTTP请求失败：{e}")
             retry_count += 1
             if retry_count < max_retries:
-                print(f"     🔄 准备重试...")
+                logger.info("     🔄 准备重试...")
             continue
         except requests.exceptions.RequestException as e:
-            print(f"     ❌ API请求失败：{e}")
+            logger.error(f"     ❌ API请求失败：{e}")
             retry_count += 1
             if retry_count < max_retries:
-                print(f"     🔄 准备重试...")
+                logger.info("     🔄 准备重试...")
             continue
         except json.JSONDecodeError as e:
-            print(f"     ❌ JSON解析失败：{e}")
+            logger.error(f"     ❌ JSON解析失败：{e}")
             last_error = str(e)
             last_content = content
             retry_count += 1
             if retry_count < max_retries:
-                print(f"     🔄 准备重试，告知大模型JSON格式错误...")
+                logger.info("     🔄 准备重试，告知大模型JSON格式错误...")
             continue
         except Exception as e:
-            print(f"     ❌ 处理失败：{e}")
+            logger.error(f"     ❌ 处理失败：{e}")
             last_error = str(e)
             if 'content' in locals():
                 last_content = content
             retry_count += 1
             if retry_count < max_retries:
-                print(f"     🔄 准备重试...")
+                logger.info("     🔄 准备重试...")
             continue
     
-    print(f"     ❌ 达到最大重试次数 ({max_retries})，返回None")
+    logger.error(f"     ❌ 达到最大重试次数 ({max_retries})，返回None")
     return None
 
 
@@ -333,30 +320,18 @@ def get_mock_lesson_data(course_info: dict) -> dict:
 
 
 def _save_prompt_to_file(course_info: dict, prompt: str):
-    """
-    将提示词保存到与exe同路径的txt文件
-
-    Args:
-        course_info: 课程信息字典
-        prompt: 要保存的提示词
-    """
     try:
-        # 获取exe所在目录（支持PyInstaller打包环境）
         if hasattr(sys, '_MEIPASS'):
-            # PyInstaller打包后的环境
             base_dir = os.path.dirname(sys.executable)
         else:
-            # 开发环境
             base_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # 生成文件名：使用课题名称和时间戳
         topic = course_info.get('课题名称', '未命名课题')
         safe_topic = topic.replace('\\', '-').replace('/', '-').replace(':', '-').replace('*', '-').replace('?', '-').replace('"', '-').replace('<', '-').replace('>', '-').replace('|', '-')
         timestamp = time.strftime('%Y%m%d_%H%M%S')
         filename = f"提示词_{safe_topic}_{timestamp}.txt"
         filepath = os.path.join(base_dir, filename)
 
-        # 保存提示词到文件
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write("=" * 80 + "\n")
             f.write("教案生成提示词\n")
@@ -372,6 +347,6 @@ def _save_prompt_to_file(course_info: dict, prompt: str):
             f.write("=" * 80 + "\n\n")
             f.write(prompt)
 
-        print(f"     💾 提示词已保存到: {filename}")
+        logger.info(f"     💾 提示词已保存到: {filename}")
     except Exception as e:
-        print(f"     ⚠️  保存提示词失败: {e}")
+        logger.warning(f"     ⚠️  保存提示词失败: {e}")

@@ -316,15 +316,21 @@ function App() {
     document.body.removeChild(link);
   };
 
-  const getLogStyle = (msg) => {
-    if (!msg) return { color: '#86868b' };
-    if (msg.includes('失败') || msg.includes('错误') || msg.includes('Error') || msg.includes('error')) {
+  const getLogStyle = (log) => {
+    if (!log) return { color: '#86868b' };
+    const msg = log.message || '';
+    const level = log.level || '';
+    
+    if (level === 'error' || msg.includes('失败') || msg.includes('错误') || msg.includes('Error')) {
       return { color: '#ff3b30' };
     }
-    if (msg.includes('成功') || msg.includes('完成')) {
+    if (level === 'success' || msg.includes('成功') || msg.includes('完成') || msg.includes('🎉')) {
       return { color: '#34c759' };
     }
-    if (msg.includes('开始') || msg.includes('正在')) {
+    if (level === 'warning' || msg.includes('警告')) {
+      return { color: '#ff9500' };
+    }
+    if (level === 'progress' || msg.includes('开始') || msg.includes('正在') || msg.includes('📖') || msg.includes('📝')) {
       return { color: '#007aff' };
     }
     return { color: '#86868b' };
@@ -636,7 +642,7 @@ function App() {
                     )}
                     <div className="logs-list">
                       {backendLogs.map((log, index) => (
-                        <div key={index} className="log-item" style={getLogStyle(log.message)}>
+                        <div key={index} className="log-item" style={getLogStyle(log)}>
                           <span className="log-time">[{log.time}]</span>
                           <span className="log-message">{log.message}</span>
                         </div>

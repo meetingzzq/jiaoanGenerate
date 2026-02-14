@@ -253,7 +253,8 @@ def poll_logs(session_id):
         'total_logs': len(all_logs),
         'status': session.get('status'),
         'progress': session.get('progress', 0),
-        'results': session.get('results', [])
+        'results': session.get('results', []),
+        'current_topic': session.get('current_topic', '')
     })
 
 

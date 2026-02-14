@@ -85,9 +85,11 @@ function App() {
         if (session.status === 'generating') {
           setIsGenerating(true);
           setCurrentTopic(session.current_topic || '');
+          setActiveTab('loading');
           startPolling(sessionId);
         } else if (session.status === 'completed' || session.status === 'error') {
           setIsGenerating(false);
+          setActiveTab('results');
         }
       }
     } catch (error) {
@@ -127,6 +129,7 @@ function App() {
           
           if (status === 'completed' || status === 'error') {
             setIsGenerating(false);
+            setActiveTab('results');
             if (pollIntervalRef.current) {
               clearInterval(pollIntervalRef.current);
             }

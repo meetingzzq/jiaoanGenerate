@@ -1,14 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Layout, Form, Input, Button, Card, List, Typography, notification, message, Badge, Tag, Upload, Spin } from 'antd';
-import { UploadOutlined, FileOutlined, DeleteOutlined, ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, FileTextOutlined, CloudUploadOutlined, ThunderboltOutlined, LoadingOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import './App.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
-
-const { Header, Content, Footer } = Layout;
-const { Title, Text } = Typography;
-const { TextArea } = Input;
 
 function App() {
   const [fixedInfo, setFixedInfo] = useState({
@@ -34,9 +28,14 @@ function App() {
   const [sessionStatus, setSessionStatus] = useState(null);
   const [currentTopic, setCurrentTopic] = useState('');
   const [uploadingFiles, setUploadingFiles] = useState({});
+  const [activeTab, setActiveTab] = useState('form');
+  const [expandedLesson, setExpandedLesson] = useState(1);
+  
   const logsEndRef = useRef(null);
   const pollIntervalRef = useRef(null);
   const lastLogIndexRef = useRef(0);
+  const fileInputRef = useRef(null);
+  const currentUploadLessonId = useRef(null);
 
   const scrollToBottom = useCallback(() => {
     if (logsEndRef.current) {
@@ -148,7 +147,7 @@ function App() {
 
   const addLesson = () => {
     const newId = lessons.length > 0 ? Math.max(...lessons.map(l => l.id)) + 1 : 1;
-    setLessons([...lessons, {
+    const newLesson = {
       id: newId,
       课题名称: `课时${newId}`,
       授课地点: '',
@@ -156,15 +155,17 @@ function App() {
       授课学时: '1学时',
       授课类型: '理论课',
       用户描述: ''
-    }]);
+    };
+    setLessons([...lessons, newLesson]);
+    setExpandedLesson(newId);
   };
 
   const removeLesson = (id) => {
     if (lessons.length > 1) {
       setLessons(lessons.filter(lesson => lesson.id !== id));
-      message.success('课时删除成功');
-    } else {
-      message.warning('至少需要保留一个课时');
+      const newDocs = { ...lessonDocuments };
+      delete newDocs[id];
+      setLessonDocuments(newDocs);
     }
   };
 
@@ -201,15 +202,14 @@ function App() {
           ...prev,
           [lessonId]: [...(prev[lessonId] || []), response.data.document]
         }));
-        message.success(`文档 "${file.name}" 上传成功 (${formatFileSize(file.size)})`);
         return true;
       } else {
-        message.error(response.data.message || '上传失败');
+        alert(response.data.message || '上传失败');
         return false;
       }
     } catch (error) {
       console.error('上传文档失败:', error);
-      message.error(error.response?.data?.message || '上传文档失败');
+      alert(error.response?.data?.message || '上传文档失败');
       return false;
     } finally {
       setUploadingFiles(prev => {
@@ -220,19 +220,11 @@ function App() {
     }
   };
 
-  const handleDeleteDocument = async (lessonId, filename) => {
-    try {
-      const response = await axios.delete(`${API_BASE_URL}/api/documents/${lessonId}/${filename}`);
-      if (response.data.success) {
-        setLessonDocuments(prev => ({
-          ...prev,
-          [lessonId]: (prev[lessonId] || []).filter(doc => doc.filename !== filename)
-        }));
-        message.success('文档删除成功');
-      }
-    } catch (error) {
-      message.error('删除文档失败');
-    }
+  const handleDeleteDocument = (lessonId, filename) => {
+    setLessonDocuments(prev => ({
+      ...prev,
+      [lessonId]: (prev[lessonId] || []).filter(doc => doc.filename !== filename)
+    }));
   };
 
   const formatFileSize = (bytes) => {
@@ -243,13 +235,22 @@ function App() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
+  const triggerFileUpload = (lessonId) => {
+    currentUploadLessonId.current = lessonId;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file && currentUploadLessonId.current) {
+      handleDocumentUpload(currentUploadLessonId.current, file);
+    }
+    e.target.value = '';
+  };
+
   const generateLessonPlans = async () => {
     if (!apiKey || apiKey.trim() === '') {
-      notification.error({
-        message: 'API Key 未填写',
-        description: '请输入您的 DeepSeek API Key 才能生成教案',
-        duration: 3
-      });
+      alert('请输入您的 DeepSeek API Key');
       return;
     }
 
@@ -258,11 +259,7 @@ function App() {
     );
 
     if (hasEmptyFields) {
-      notification.error({ 
-        message: '表单验证失败',
-        description: '请填写所有课时的必填字段',
-        duration: 3
-      });
+      alert('请填写所有课时的必填字段');
       return;
     }
 
@@ -270,6 +267,7 @@ function App() {
     setGenerationResults([]);
     setBackendLogs([]);
     lastLogIndexRef.current = 0;
+    setActiveTab('logs');
 
     try {
       const sessionResponse = await axios.post(`${API_BASE_URL}/api/session`);
@@ -293,497 +291,423 @@ function App() {
 
       if (response.data.success) {
         setGenerationResults(response.data.results);
-        const successCount = response.data.results.filter(r => r.status === '成功').length;
-        notification.success({ 
-          message: '批量生成完成',
-          description: `成功生成 ${successCount} 个教案`,
-          duration: 3
-        });
+        setActiveTab('results');
       } else if (response.data.error_type === 'invalid_api_key') {
-        notification.error({
-          message: 'API Key 无效',
-          description: 'DeepSeek API Key 无效或已过期',
-          duration: 5
-        });
+        alert('DeepSeek API Key 无效或已过期');
       } else {
-        notification.error({
-          message: '生成失败',
-          description: response.data.message,
-          duration: 3
-        });
+        alert(response.data.message || '生成失败');
       }
     } catch (error) {
       console.error('批量生成失败:', error);
-      notification.error({ 
-        message: '批量生成失败',
-        description: error.response?.data?.message || '请检查后端服务',
-        duration: 3
-      });
+      alert(error.response?.data?.message || '请检查后端服务');
     } finally {
       setIsGenerating(false);
       stopPolling();
     }
   };
 
-  const recoverSession = async () => {
-    if (currentSessionId) {
-      setIsGenerating(true);
-      startPolling(currentSessionId);
-    }
+  const downloadFile = (fileUrl, fileName) => {
+    const link = document.createElement('a');
+    link.href = `${API_BASE_URL}${fileUrl}`;
+    link.download = fileName;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const getLogStyle = (msg) => {
-    if (!msg) return { color: '#94a3b8' };
+    if (!msg) return { color: '#86868b' };
     if (msg.includes('失败') || msg.includes('错误') || msg.includes('Error') || msg.includes('error')) {
-      return { color: '#f87171' };
+      return { color: '#ff3b30' };
     }
     if (msg.includes('成功') || msg.includes('完成')) {
-      return { color: '#4ade80' };
+      return { color: '#34c759' };
     }
     if (msg.includes('开始') || msg.includes('正在')) {
-      return { color: '#60a5fa' };
+      return { color: '#007aff' };
     }
-    return { color: '#94a3b8' };
+    return { color: '#86868b' };
   };
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#0f172a' }}>
-      <Header style={{ 
-        background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', 
-        borderBottom: '1px solid #334155',
-        padding: '0 32px',
-        height: 72,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        position: 'sticky',
-        top: 0,
-        zIndex: 100
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ 
-            width: 44, 
-            height: 44, 
-            borderRadius: 12, 
-            background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            fontSize: 22,
-            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
-          }}>
-            📚
+    <div className="app-container">
+      <input
+        ref={fileInputRef}
+        type="file"
+        style={{ display: 'none' }}
+        accept=".docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.pdf"
+        onChange={handleFileChange}
+      />
+      
+      <header className="app-header">
+        <div className="header-content">
+          <div className="logo-section">
+            <div className="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+            </div>
+            <div className="logo-text">
+              <h1>教案生成系统</h1>
+              <p>相城中专 · 祝志强</p>
+            </div>
           </div>
-          <div>
-            <div style={{ color: '#f1f5f9', fontSize: 18, fontWeight: 600 }}>相城中专教案生成系统</div>
-            <div style={{ color: '#64748b', fontSize: 12 }}>作者：祝志强</div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          {sessionStatus === 'generating' && !isGenerating && (
-            <Button 
-              onClick={recoverSession}
-              icon={<ReloadOutlined />}
-              style={{ 
-                background: '#1e293b', 
-                border: '1px solid #334155',
-                color: '#94a3b8',
-                borderRadius: 8
-              }}
-            >
-              恢复会话
-            </Button>
-          )}
-          <Button 
-            type="primary" 
-            onClick={generateLessonPlans} 
-            loading={isGenerating}
+          
+          <button 
+            className={`generate-btn ${isGenerating ? 'generating' : ''}`}
+            onClick={generateLessonPlans}
             disabled={isGenerating}
-            icon={<ThunderboltOutlined />}
-            style={{ 
-              background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-              border: 'none',
-              height: 42,
-              padding: '0 24px',
-              fontWeight: 600,
-              borderRadius: 10,
-              boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
-            }}
           >
-            {isGenerating ? '生成中...' : '批量生成教案'}
-          </Button>
+            {isGenerating ? (
+              <>
+                <span className="spinner"></span>
+                生成中...
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+                批量生成教案
+              </>
+            )}
+          </button>
         </div>
-      </Header>
+      </header>
 
-      <Content style={{ padding: '24px 32px' }}>
-        <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: backendLogs.length > 0 || isGenerating ? '1fr 380px' : '1fr', gap: 24, alignItems: 'start' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              <Card 
-                style={{ 
-                  background: '#1e293b', 
-                  borderRadius: 16, 
-                  border: '1px solid #334155',
-                  boxShadow: '0 4px 24px rgba(0,0,0,0.2)'
-                }}
-                styles={{ body: { padding: 24 } }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-                  <div style={{ width: 4, height: 20, background: 'linear-gradient(180deg, #3b82f6 0%, #8b5cf6 100%)', borderRadius: 2 }} />
-                  <span style={{ color: '#f1f5f9', fontSize: 16, fontWeight: 600 }}>固定课程信息</span>
-                </div>
-                <Form layout="vertical">
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-                    {['院系', '授课班级', '专业名称'].map(field => (
-                      <Form.Item key={field} label={<span style={{ color: '#94a3b8', fontSize: 13 }}>{field}</span>} style={{ marginBottom: 12 }}>
-                        <Input 
-                          value={fixedInfo[field]} 
-                          onChange={(e) => setFixedInfo({ ...fixedInfo, [field]: e.target.value })} 
-                          style={{ 
-                            background: '#0f172a', 
-                            border: '1px solid #334155', 
-                            color: '#f1f5f9',
-                            borderRadius: 8,
-                            height: 38
-                          }}
-                        />
-                      </Form.Item>
-                    ))}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
-                    {['课程名称', '授课教师'].map(field => (
-                      <Form.Item key={field} label={<span style={{ color: '#94a3b8', fontSize: 13 }}>{field}</span>} style={{ marginBottom: 12 }}>
-                        <Input 
-                          value={fixedInfo[field]} 
-                          onChange={(e) => setFixedInfo({ ...fixedInfo, [field]: e.target.value })} 
-                          style={{ 
-                            background: '#0f172a', 
-                            border: '1px solid #334155', 
-                            color: '#f1f5f9',
-                            borderRadius: 8,
-                            height: 38
-                          }}
-                        />
-                      </Form.Item>
-                    ))}
-                  </div>
-                  <Form.Item label={<span style={{ color: '#94a3b8', fontSize: 13 }}>课程描述 <span style={{ color: '#475569' }}>（选填）</span></span>} style={{ marginBottom: 12 }}>
-                    <TextArea
-                      value={fixedInfo.课程描述}
-                      onChange={(e) => setFixedInfo({ ...fixedInfo, 课程描述: e.target.value })}
-                      style={{ 
-                        background: '#0f172a', 
-                        border: '1px solid #334155', 
-                        color: '#f1f5f9',
-                        borderRadius: 8
-                      }}
-                      placeholder="描述整个课程的目标、特点..."
-                      rows={2}
-                    />
-                  </Form.Item>
-                  <Form.Item label={<span style={{ color: '#f87171', fontSize: 13 }}>🔑 DeepSeek API Key *</span>} style={{ marginBottom: 0 }} required>
-                    <Input.Password
-                      value={apiKey}
-                      onChange={handleApiKeyChange}
-                      style={{ 
-                        background: '#0f172a', 
-                        border: '1px solid #334155', 
-                        color: '#f1f5f9',
-                        borderRadius: 8,
-                        height: 38
-                      }}
-                      placeholder="请输入您的DeepSeek API Key"
-                    />
-                  </Form.Item>
-                </Form>
-              </Card>
+      <main className="main-content">
+        <div className="content-wrapper">
+          <section className="fixed-info-section">
+            <div className="section-header">
+              <h2>课程基本信息</h2>
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label>院系</label>
+                <input
+                  type="text"
+                  value={fixedInfo.院系}
+                  onChange={(e) => setFixedInfo({ ...fixedInfo, 院系: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>授课班级</label>
+                <input
+                  type="text"
+                  value={fixedInfo.授课班级}
+                  onChange={(e) => setFixedInfo({ ...fixedInfo, 授课班级: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>专业名称</label>
+                <input
+                  type="text"
+                  value={fixedInfo.专业名称}
+                  onChange={(e) => setFixedInfo({ ...fixedInfo, 专业名称: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>课程名称</label>
+                <input
+                  type="text"
+                  value={fixedInfo.课程名称}
+                  onChange={(e) => setFixedInfo({ ...fixedInfo, 课程名称: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>授课教师</label>
+                <input
+                  type="text"
+                  value={fixedInfo.授课教师}
+                  onChange={(e) => setFixedInfo({ ...fixedInfo, 授课教师: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>课程描述 <span className="optional">选填</span></label>
+                <input
+                  type="text"
+                  value={fixedInfo.课程描述}
+                  onChange={(e) => setFixedInfo({ ...fixedInfo, 课程描述: e.target.value })}
+                  placeholder="描述整个课程的目标、特点..."
+                />
+              </div>
+            </div>
+            <div className="api-key-section">
+              <label>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4" />
+                </svg>
+                DeepSeek API Key
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={handleApiKeyChange}
+                placeholder="请输入您的 API Key"
+              />
+            </div>
+          </section>
 
-              <Card 
-                style={{ 
-                  background: '#1e293b', 
-                  borderRadius: 16, 
-                  border: '1px solid #334155',
-                  boxShadow: '0 4px 24px rgba(0,0,0,0.2)'
-                }}
-                styles={{ body: { padding: 24 } }}
-                title={
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 4, height: 20, background: 'linear-gradient(180deg, #3b82f6 0%, #8b5cf6 100%)', borderRadius: 2 }} />
-                    <span style={{ color: '#f1f5f9', fontSize: 16, fontWeight: 600 }}>课时信息</span>
-                    <Badge count={lessons.length} style={{ background: '#3b82f6', marginLeft: 4 }} />
-                  </div>
-                }
-                extra={
-                  <Button 
-                    type="dashed" 
-                    onClick={addLesson}
-                    style={{ color: '#3b82f6', borderColor: '#3b82f6', borderRadius: 8 }}
+          <section className="lessons-section">
+            <div className="section-header">
+              <h2>课时信息</h2>
+              <span className="badge">{lessons.length}</span>
+              <button className="add-lesson-btn" onClick={addLesson}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                添加课时
+              </button>
+            </div>
+
+            <div className="lessons-list">
+              {lessons.map((lesson) => (
+                <div 
+                  key={lesson.id} 
+                  className={`lesson-card ${expandedLesson === lesson.id ? 'expanded' : ''}`}
+                >
+                  <div 
+                    className="lesson-header"
+                    onClick={() => setExpandedLesson(expandedLesson === lesson.id ? null : lesson.id)}
                   >
-                    + 添加课时
-                  </Button>
-                }
-              >
-                <List
-                  dataSource={lessons}
-                  renderItem={(lesson) => (
-                    <div style={{ 
-                      border: '1px solid #334155', 
-                      borderRadius: 12, 
-                      marginBottom: 16, 
-                      background: '#0f172a',
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center', 
-                        padding: '12px 16px',
-                        background: '#1e293b',
-                        borderBottom: '1px solid #334155'
-                      }}>
-                        <Tag style={{ 
-                          background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', 
-                          border: 'none',
-                          color: '#fff',
-                          borderRadius: 6,
-                          fontWeight: 500
-                        }}>
-                          课时 {lesson.id}
-                        </Tag>
-                        <Button 
-                          danger 
-                          size="small" 
-                          type="text" 
-                          onClick={() => removeLesson(lesson.id)}
-                          style={{ color: '#f87171' }}
+                    <div className="lesson-title">
+                      <span className="lesson-number">{String(lesson.id).padStart(2, '0')}</span>
+                      <span className="lesson-name">{lesson.课题名称}</span>
+                    </div>
+                    <div className="lesson-actions">
+                      {lessons.length > 1 && (
+                        <button 
+                          className="delete-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeLesson(lesson.id);
+                          }}
                         >
-                          删除
-                        </Button>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      )}
+                      <span className="expand-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {expandedLesson === lesson.id && (
+                    <div className="lesson-content">
+                      <div className="form-grid small">
+                        <div className="form-group">
+                          <label>课题名称</label>
+                          <input
+                            type="text"
+                            value={lesson.课题名称}
+                            onChange={(e) => updateLesson(lesson.id, '课题名称', e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>授课地点</label>
+                          <input
+                            type="text"
+                            value={lesson.授课地点}
+                            onChange={(e) => updateLesson(lesson.id, '授课地点', e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>授课时间</label>
+                          <input
+                            type="text"
+                            value={lesson.授课时间}
+                            onChange={(e) => updateLesson(lesson.id, '授课时间', e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>授课学时</label>
+                          <input
+                            type="text"
+                            value={lesson.授课学时}
+                            onChange={(e) => updateLesson(lesson.id, '授课学时', e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>授课类型</label>
+                          <input
+                            type="text"
+                            value={lesson.授课类型}
+                            onChange={(e) => updateLesson(lesson.id, '授课类型', e.target.value)}
+                          />
+                        </div>
                       </div>
-                      <div style={{ padding: 16 }}>
-                        <Form layout="vertical">
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-                            <Form.Item label={<span style={{ color: '#94a3b8', fontSize: 12 }}>课题名称</span>} style={{ marginBottom: 8 }}>
-                              <Input 
-                                value={lesson.课题名称} 
-                                onChange={(e) => updateLesson(lesson.id, '课题名称', e.target.value)} 
-                                style={{ background: '#1e293b', border: '1px solid #334155', color: '#f1f5f9', borderRadius: 6, height: 34 }}
-                              />
-                            </Form.Item>
-                            <Form.Item label={<span style={{ color: '#94a3b8', fontSize: 12 }}>授课地点</span>} style={{ marginBottom: 8 }}>
-                              <Input 
-                                value={lesson.授课地点} 
-                                onChange={(e) => updateLesson(lesson.id, '授课地点', e.target.value)} 
-                                style={{ background: '#1e293b', border: '1px solid #334155', color: '#f1f5f9', borderRadius: 6, height: 34 }}
-                              />
-                            </Form.Item>
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                            <Form.Item label={<span style={{ color: '#94a3b8', fontSize: 12 }}>授课时间</span>} style={{ marginBottom: 8 }}>
-                              <Input 
-                                value={lesson.授课时间} 
-                                onChange={(e) => updateLesson(lesson.id, '授课时间', e.target.value)} 
-                                style={{ background: '#1e293b', border: '1px solid #334155', color: '#f1f5f9', borderRadius: 6, height: 34 }}
-                              />
-                            </Form.Item>
-                            <Form.Item label={<span style={{ color: '#94a3b8', fontSize: 12 }}>授课学时</span>} style={{ marginBottom: 8 }}>
-                              <Input 
-                                value={lesson.授课学时} 
-                                onChange={(e) => updateLesson(lesson.id, '授课学时', e.target.value)} 
-                                style={{ background: '#1e293b', border: '1px solid #334155', color: '#f1f5f9', borderRadius: 6, height: 34 }}
-                              />
-                            </Form.Item>
-                            <Form.Item label={<span style={{ color: '#94a3b8', fontSize: 12 }}>授课类型</span>} style={{ marginBottom: 8 }}>
-                              <Input 
-                                value={lesson.授课类型} 
-                                onChange={(e) => updateLesson(lesson.id, '授课类型', e.target.value)} 
-                                style={{ background: '#1e293b', border: '1px solid #334155', color: '#f1f5f9', borderRadius: 6, height: 34 }}
-                              />
-                            </Form.Item>
-                          </div>
-                          <Form.Item label={<span style={{ color: '#94a3b8', fontSize: 12 }}>本节课描述 <span style={{ color: '#475569' }}>（选填）</span></span>} style={{ marginBottom: 8 }}>
-                            <TextArea
-                              value={lesson.用户描述}
-                              onChange={(e) => updateLesson(lesson.id, '用户描述', e.target.value)}
-                              style={{ background: '#1e293b', border: '1px solid #334155', color: '#f1f5f9', borderRadius: 6 }}
-                              placeholder="描述上课内容、想法..."
-                              rows={2}
-                            />
-                          </Form.Item>
-                          <Form.Item label={<span style={{ color: '#94a3b8', fontSize: 12 }}>参考文档 <span style={{ color: '#475569' }}>（选填）</span></span>} style={{ marginBottom: 0 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                              {lessonDocuments[lesson.id]?.map((doc, index) => (
-                                <Tag 
-                                  key={index} 
-                                  icon={<FileOutlined />}
-                                  closable 
-                                  onClose={() => handleDeleteDocument(lesson.id, doc.filename)}
-                                  style={{ 
-                                    background: '#1e293b', 
-                                    border: '1px solid #334155',
-                                    color: '#94a3b8',
-                                    padding: '4px 10px',
-                                    borderRadius: 6
-                                  }}
-                                >
-                                  {doc.filename} ({formatFileSize(doc.file_size)})
-                                </Tag>
-                              ))}
-                              {Object.values(uploadingFiles).some(v => v) && (
-                                <Spin indicator={<LoadingOutlined style={{ color: '#3b82f6' }} spin />} />
-                              )}
-                              <Upload
-                                beforeUpload={(file) => { handleDocumentUpload(lesson.id, file); return false; }}
-                                showUploadList={false}
-                                accept=".docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.pdf"
+                      
+                      <div className="form-group full-width">
+                        <label>本节课描述 <span className="optional">选填</span></label>
+                        <textarea
+                          value={lesson.用户描述}
+                          onChange={(e) => updateLesson(lesson.id, '用户描述', e.target.value)}
+                          placeholder="描述上课内容、想法..."
+                          rows={2}
+                        />
+                      </div>
+
+                      <div className="documents-section">
+                        <label>参考文档 <span className="optional">选填</span></label>
+                        <div className="documents-list">
+                          {lessonDocuments[lesson.id]?.map((doc, index) => (
+                            <div key={index} className="document-item">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                              </svg>
+                              <span className="doc-name">{doc.filename}</span>
+                              <span className="doc-size">{formatFileSize(doc.file_size)}</span>
+                              <button 
+                                className="remove-doc-btn"
+                                onClick={() => handleDeleteDocument(lesson.id, doc.filename)}
                               >
-                                <Button 
-                                  size="small" 
-                                  icon={<CloudUploadOutlined />}
-                                  style={{ 
-                                    background: '#1e293b', 
-                                    border: '1px solid #334155',
-                                    color: '#94a3b8',
-                                    borderRadius: 6
-                                  }}
-                                >
-                                  上传文档
-                                </Button>
-                              </Upload>
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <line x1="18" y1="6" x2="6" y2="18" />
+                                  <line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                              </button>
                             </div>
-                          </Form.Item>
-                        </Form>
+                          ))}
+                          
+                          {Object.values(uploadingFiles).some(v => v) && (
+                            <div className="uploading-indicator">
+                              <span className="spinner small"></span>
+                              上传中...
+                            </div>
+                          )}
+                          
+                          <button 
+                            className="upload-btn"
+                            onClick={() => triggerFileUpload(lesson.id)}
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="17 8 12 3 7 8" />
+                              <line x1="12" y1="3" x2="12" y2="15" />
+                            </svg>
+                            上传文档
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
-                />
-              </Card>
+                </div>
+              ))}
             </div>
+          </section>
 
-            {(backendLogs.length > 0 || isGenerating) && (
-              <div style={{ position: 'sticky', top: 96 }}>
-                {isGenerating && (
-                  <Card 
-                    style={{ 
-                      background: '#1e293b', 
-                      borderRadius: 12, 
-                      border: '1px solid #334155',
-                      marginBottom: 12
-                    }}
-                    styles={{ body: { padding: 16 } }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <SyncOutlined spin style={{ color: '#3b82f6', fontSize: 18 }} />
-                      <div>
-                        <div style={{ color: '#f1f5f9', fontWeight: 500 }}>正在生成教案...</div>
-                        {currentTopic && <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>{currentTopic}</div>}
-                      </div>
-                    </div>
-                  </Card>
-                )}
+          {(backendLogs.length > 0 || generationResults.length > 0 || isGenerating) && (
+            <section className="status-section">
+              <div className="tabs">
+                <button 
+                  className={`tab ${activeTab === 'logs' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('logs')}
+                >
+                  {isGenerating && <span className="spinner small"></span>}
+                  实时日志
+                  {backendLogs.length > 0 && <span className="tab-badge">{backendLogs.length}</span>}
+                </button>
+                <button 
+                  className={`tab ${activeTab === 'results' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('results')}
+                >
+                  生成结果
+                  {generationResults.length > 0 && <span className="tab-badge success">{generationResults.filter(r => r.status === '成功').length}</span>}
+                </button>
+              </div>
 
-                {backendLogs.length > 0 && (
-                  <Card 
-                    style={{ 
-                      background: '#1e293b', 
-                      borderRadius: 12, 
-                      border: '1px solid #334155',
-                      marginBottom: 12
-                    }}
-                    styles={{ body: { padding: 0 } }}
-                    title={
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px 0' }}>
-                        <FileTextOutlined style={{ color: '#3b82f6' }} />
-                        <span style={{ color: '#f1f5f9', fontWeight: 500 }}>实时日志</span>
-                        {isGenerating && <SyncOutlined spin style={{ color: '#3b82f6', marginLeft: 4 }} />}
+              <div className="tab-content">
+                {activeTab === 'logs' && (
+                  <div className="logs-panel">
+                    {isGenerating && currentTopic && (
+                      <div className="current-task">
+                        <span className="spinner"></span>
+                        正在生成: {currentTopic}
                       </div>
-                    }
-                  >
-                    <div style={{ 
-                      maxHeight: 280, 
-                      overflow: 'auto', 
-                      background: '#0f172a', 
-                      padding: 12,
-                      borderRadius: '0 0 12px 12px',
-                      fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                      fontSize: 12
-                    }}>
+                    )}
+                    <div className="logs-list">
                       {backendLogs.map((log, index) => (
-                        <div key={index} style={{ 
-                          padding: '3px 0',
-                          lineHeight: 1.5,
-                          borderBottom: index < backendLogs.length - 1 ? '1px solid #1e293b' : 'none',
-                          ...getLogStyle(log.message)
-                        }}>
-                          <span style={{ color: '#475569', marginRight: 8 }}>[{log.time}]</span>
-                          {log.message}
+                        <div key={index} className="log-item" style={getLogStyle(log.message)}>
+                          <span className="log-time">[{log.time}]</span>
+                          <span className="log-message">{log.message}</span>
                         </div>
                       ))}
                       <div ref={logsEndRef} />
                     </div>
-                  </Card>
+                  </div>
                 )}
 
-                {generationResults.length > 0 && (
-                  <Card 
-                    style={{ 
-                      background: '#1e293b', 
-                      borderRadius: 12, 
-                      border: '1px solid #334155'
-                    }}
-                    styles={{ body: { padding: 16 } }}
-                    title={
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {generationResults.every(r => r.status === '成功') ? 
-                          <CheckCircleOutlined style={{ color: '#4ade80' }} /> : 
-                          <CloseCircleOutlined style={{ color: '#f87171' }} />
-                        }
-                        <span style={{ color: '#f1f5f9', fontWeight: 500 }}>生成结果</span>
+                {activeTab === 'results' && (
+                  <div className="results-panel">
+                    {generationResults.length === 0 ? (
+                      <div className="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="12" y1="18" x2="12" y2="12" />
+                          <line x1="9" y1="15" x2="15" y2="15" />
+                        </svg>
+                        <p>暂无生成结果</p>
                       </div>
-                    }
-                  >
-                    {generationResults.map((result, index) => (
-                      <div key={index} style={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: 10, 
-                        padding: '8px 0',
-                        borderBottom: index < generationResults.length - 1 ? '1px solid #334155' : 'none'
-                      }}>
-                        {result.status === '成功' ? 
-                          <CheckCircleOutlined style={{ color: '#4ade80' }} /> : 
-                          <CloseCircleOutlined style={{ color: '#f87171' }} />
-                        }
-                        <span style={{ color: '#f1f5f9', flex: 1, fontSize: 13 }}>{result.topic}</span>
-                        {result.file_url && (
-                          <Button 
-                            type="link" 
-                            href={`${API_BASE_URL}${result.file_url}`} 
-                            target="_blank"
-                            style={{ color: '#3b82f6', padding: 0, fontSize: 13 }}
-                          >
-                            下载
-                          </Button>
-                        )}
+                    ) : (
+                      <div className="results-list">
+                        {generationResults.map((result, index) => (
+                          <div key={index} className={`result-item ${result.status === '成功' ? 'success' : 'error'}`}>
+                            <div className="result-icon">
+                              {result.status === '成功' ? (
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              ) : (
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <circle cx="12" cy="12" r="10" />
+                                  <line x1="15" y1="9" x2="9" y2="15" />
+                                  <line x1="9" y1="9" x2="15" y2="15" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="result-info">
+                              <span className="result-topic">{result.topic}</span>
+                              <span className="result-status">{result.status}</span>
+                            </div>
+                            {result.file_url && (
+                              <button 
+                                className="download-btn"
+                                onClick={() => downloadFile(result.file_url, result.file_name)}
+                              >
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                  <polyline points="7 10 12 15 17 10" />
+                                  <line x1="12" y1="15" x2="12" y2="3" />
+                                </svg>
+                                下载
+                              </button>
+                            )}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </Card>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
+            </section>
+          )}
         </div>
-      </Content>
-      <Footer style={{ 
-        textAlign: 'center', 
-        background: 'transparent', 
-        color: '#475569',
-        padding: '24px 50px',
-        fontSize: 12
-      }}>
-        相城中专教案生成系统 ©{new Date().getFullYear()}
-      </Footer>
-    </Layout>
+      </main>
+
+      <footer className="app-footer">
+        <p>© {new Date().getFullYear()} 相城中专教案生成系统</p>
+      </footer>
+    </div>
   );
 }
 

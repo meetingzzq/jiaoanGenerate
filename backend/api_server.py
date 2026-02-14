@@ -50,6 +50,15 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 STATIC_DIR = os.path.join(BASE_DIR, 'frontend', 'dist')
 OUTPUT_DIR = os.path.join(DATA_DIR, 'output')
 
+# Log startup info
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.info(f"Flask app initialized")
+logger.info(f"BASE_DIR: {BASE_DIR}")
+logger.info(f"DATA_DIR: {DATA_DIR}")
+logger.info(f"UPLOAD_DIR: {UPLOAD_DIR}")
+logger.info(f"OUTPUT_DIR: {OUTPUT_DIR}")
+
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
@@ -511,7 +520,12 @@ def download_file(filename):
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()}), 200
+    return jsonify({'status': 'healthy'}), 200
+
+
+@app.route('/ping', methods=['GET'])
+def ping():
+    return 'pong', 200
 
 
 @app.route('/', defaults={'path': ''})

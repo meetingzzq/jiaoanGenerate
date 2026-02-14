@@ -28,5 +28,5 @@ EXPOSE 8080
 # Set working directory to backend
 WORKDIR /app/backend
 
-# Run the application with gunicorn
-CMD gunicorn api_server:app --bind 0.0.0.0:8080 --timeout 300
+# Run the application with gunicorn (single worker for memory efficiency)
+CMD gunicorn api_server:app --bind 0.0.0.0:8080 --workers 1 --threads 4 --timeout 120 --access-logfile - --error-logfile - --capture-output --enable-stdio-inheritance

@@ -509,6 +509,11 @@ def download_file(filename):
         return jsonify({'success': False, 'message': f'下载失败: {str(e)}'}), 404
 
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'healthy', 'timestamp': datetime.now().isoformat()}), 200
+
+
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_frontend(path):

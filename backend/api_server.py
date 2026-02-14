@@ -108,8 +108,11 @@ class SessionLogHandler(logging.Handler):
                 if self.session_id in generation_sessions:
                     generation_sessions[self.session_id]['logs'].append(log_entry)
             
-            # 同时打印到终端
-            print(f"[{log_entry['time']}] {msg}")
+            # 同时打印到终端，使用原始stdout避免递归
+            import sys
+            original_stdout = sys.__stdout__
+            original_stdout.write(f"[{log_entry['time']}] {msg}\n")
+            original_stdout.flush()
         except Exception:
             self.handleError(record)
 

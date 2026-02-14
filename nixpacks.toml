@@ -1,20 +1,7 @@
 providers = ["python"]
 
 [phases.install]
-cmd = """
-echo "===== Starting pip install ====="
-pip install -r requirements.txt
-echo "===== pip install completed ====="
-which gunicorn || echo "gunicorn not found in PATH"
-pip show gunicorn || echo "gunicorn not installed"
-"""
+cmd = "pip install -r requirements.txt"
 
 [start]
-cmd = """
-echo "===== Starting application ====="
-echo "Current directory: $(pwd)"
-echo "Python location: $(which python)"
-echo "gunicorn location: $(which gunicorn || echo 'not found')"
-echo "PORT: $PORT"
-cd backend && gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1
-"""
+cmd = "cd backend && gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1"

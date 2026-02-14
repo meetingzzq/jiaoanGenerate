@@ -1,7 +1,7 @@
-[phases.setup]
+providers = ["python"]
 
 [phases.install]
 cmd = "pip install -r backend/requirements.txt"
 
 [start]
-cmd = "cd backend && python3 -m gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1"
+cmd = "cd backend && gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1"

@@ -572,7 +572,10 @@ def upload_document():
             'upload_time': time.strftime('%Y-%m-%d %H:%M:%S')
         }
         
-        uploaded_documents[lesson_id] = [doc_info]
+        # 追加文档到列表，而不是覆盖
+        if lesson_id not in uploaded_documents:
+            uploaded_documents[lesson_id] = []
+        uploaded_documents[lesson_id].append(doc_info)
         
         print(f"文档内容提取成功，字符数: {len(content)}")
         

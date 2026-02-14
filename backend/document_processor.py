@@ -14,16 +14,19 @@ def extract_text_from_docx(file_path):
     try:
         print(f"开始读取Word文档: {file_path}")
         print(f"文件是否存在: {os.path.exists(file_path)}")
-        print(f"文件大小: {os.path.getsize(file_path) if os.path.exists(file_path) else 'N/A'}")
         
         if not os.path.exists(file_path):
             print(f"错误: 文件不存在 - {file_path}")
             return None
         
-        with open(file_path, 'rb') as f:
-            file_content = f.read()
+        file_size = os.path.getsize(file_path)
+        print(f"文件大小: {file_size} 字节")
         
-        doc = Document(io.BytesIO(file_content))
+        if file_size < 100:
+            print(f"错误: 文件太小，可能已损坏")
+            return None
+        
+        doc = Document(file_path)
         full_text = []
         
         print(f"  提取段落: {len(doc.paragraphs)} 个")

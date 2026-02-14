@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Layout, Form, Input, Button, Card, List, Typography, notification, message, Space, Badge, Tooltip, Collapse, Upload, Tag, Progress } from 'antd';
-import { UploadOutlined, FileOutlined, DeleteOutlined, SyncOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Layout, Form, Input, Button, Card, List, Typography, notification, message, Space, Badge, Tooltip, Upload, Tag, Divider, Empty, Spin } from 'antd';
+import { UploadOutlined, FileOutlined, DeleteOutlined, ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, FileTextOutlined, CloudUploadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import './App.css';
 
@@ -8,7 +8,6 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 const { Header, Content, Footer } = Layout;
 const { Title, Text, Paragraph } = Typography;
-const { Panel } = Collapse;
 const { TextArea } = Input;
 
 function App() {
@@ -30,11 +29,10 @@ function App() {
   const [apiKey, setApiKey] = useState(localStorage.getItem('deepseek_api_key') || '');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationResults, setGenerationResults] = useState([]);
-  const [progress, setProgress] = useState(0);
-  const [currentLessonIndex, setCurrentLessonIndex] = useState(0);
   const [backendLogs, setBackendLogs] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
   const [sessionStatus, setSessionStatus] = useState(null);
+  const [currentTopic, setCurrentTopic] = useState('');
   const logsEndRef = useRef(null);
   const pollIntervalRef = useRef(null);
   const lastLogIndexRef = useRef(0);
@@ -77,11 +75,16 @@ function App() {
       if (response.data.success) {
         const session = response.data.session;
         setSessionStatus(session.status);
-        setProgress(session.progress || 0);
         setGenerationResults(session.results || []);
+        
+        if (session.logs && session.logs.length > 0) {
+          setBackendLogs(session.logs.flat());
+          lastLogIndexRef.current = session.logs.length;
+        }
         
         if (session.status === 'generating') {
           setIsGenerating(true);
+          setCurrentTopic(session.current_topic || '');
           startPolling(sessionId);
         } else if (session.status === 'completed' || session.status === 'error') {
           setIsGenerating(false);
@@ -99,8 +102,6 @@ function App() {
       clearInterval(pollIntervalRef.current);
     }
     
-    lastLogIndexRef.current = 0;
-    
     pollIntervalRef.current = setInterval(async () => {
       try {
         const response = await axios.get(
@@ -108,7 +109,7 @@ function App() {
         );
         
         if (response.data.success) {
-          const { logs, total_logs, status, progress: newProgress, results } = response.data;
+          const { logs, total_logs, status, results, current_topic } = response.data;
           
           if (logs && logs.length > 0) {
             const newLogs = logs.flat();
@@ -117,7 +118,7 @@ function App() {
           }
           
           setSessionStatus(status);
-          setProgress(newProgress);
+          setCurrentTopic(current_topic || '');
           
           if (results && results.length > 0) {
             setGenerationResults(results);
@@ -232,7 +233,7 @@ function App() {
   const generateLessonPlans = async () => {
     if (!apiKey || apiKey.trim() === '') {
       notification.error({
-        message: '🔑 API Key 未填写',
+        message: 'API Key 未填写',
         description: '请输入您的 DeepSeek API Key 才能生成教案',
         duration: 3
       });
@@ -253,7 +254,6 @@ function App() {
     }
 
     setIsGenerating(true);
-    setProgress(0);
     setGenerationResults([]);
     setBackendLogs([]);
     lastLogIndexRef.current = 0;
@@ -287,7 +287,7 @@ function App() {
         });
       } else if (response.data.error_type === 'invalid_api_key') {
         notification.error({
-          message: '🔑 API Key 无效',
+          message: 'API Key 无效',
           description: 'DeepSeek API Key 无效或已过期',
           duration: 5
         });
@@ -315,250 +315,414 @@ function App() {
     if (currentSessionId) {
       setIsGenerating(true);
       startPolling(currentSessionId);
-      
-      const response = await axios.get(`${API_BASE_URL}/api/session/${currentSessionId}`);
-      if (response.data.success) {
-        const session = response.data.session;
-        setGenerationResults(session.results || []);
-        setBackendLogs(session.logs?.flat() || []);
-        lastLogIndexRef.current = session.logs?.length || 0;
-      }
     }
   };
 
+  const renderLogItem = (log, index) => {
+    const isError = log.message && (
+      log.message.includes('失败') || 
+      log.message.includes('错误') || 
+      log.message.includes('Error') ||
+      log.message.includes('error')
+    );
+    const isSuccess = log.message && (
+      log.message.includes('成功') || 
+      log.message.includes('完成') ||
+      log.message.includes('Success')
+    );
+    
+    return (
+      <div 
+        key={index} 
+        style={{ 
+          padding: '4px 0',
+          color: isError ? '#ff6b6b' : isSuccess ? '#51cf66' : '#adb5bd',
+          fontFamily: '"JetBrains Mono", "Fira Code", monospace',
+          fontSize: '13px',
+          lineHeight: '1.6',
+          borderBottom: index < backendLogs.length - 1 ? '1px solid #2d2d2d' : 'none'
+        }}
+      >
+        <span style={{ color: '#868e96', marginRight: 8 }}>[{log.time}]</span>
+        {log.message}
+      </div>
+    );
+  };
+
   return (
-    <Layout className="layout">
-      <div className="floating-decoration">🌸</div>
-      <div className="floating-decoration">🍃</div>
-      <div className="floating-decoration">✨</div>
-      <div className="floating-decoration">🌿</div>
-      
-      <Header className="header">
-        <div className="header-content">
-          <div className="header-icon">🎐</div>
-          <div className="header-title-wrapper">
-            <Title level={3} className="header-title">相城中专教案生成系统</Title>
-            <span className="header-author">作者：祝志强</span>
+    <Layout className="layout" style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)' }}>
+      <Header className="header" style={{ 
+        background: 'rgba(22, 33, 62, 0.95)', 
+        backdropFilter: 'blur(10px)',
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        padding: '0 24px',
+        height: 'auto',
+        lineHeight: 'normal'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ 
+              width: 48, 
+              height: 48, 
+              borderRadius: 12, 
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              fontSize: 24
+            }}>
+              📚
+            </div>
+            <div>
+              <Title level={4} style={{ margin: 0, color: '#fff', fontWeight: 600 }}>
+                相城中专教案生成系统
+              </Title>
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>作者：祝志强</Text>
+            </div>
           </div>
-          <div className="header-decoration">
-            <span className="cloud">☁️</span>
-            <span className="star">✨</span>
-          </div>
-        </div>
-        <div className="header-actions">
-          {sessionStatus === 'generating' && !isGenerating && (
+          <div style={{ display: 'flex', gap: 12 }}>
+            {sessionStatus === 'generating' && !isGenerating && (
+              <Button 
+                type="default" 
+                onClick={recoverSession}
+                icon={<ReloadOutlined />}
+                style={{ 
+                  background: 'rgba(255,255,255,0.1)', 
+                  borderColor: 'rgba(255,255,255,0.2)',
+                  color: '#fff'
+                }}
+              >
+                恢复会话
+              </Button>
+            )}
             <Button 
-              type="default" 
-              onClick={recoverSession}
-              size="large"
-              style={{ marginRight: 8 }}
+              type="primary" 
+              onClick={generateLessonPlans} 
+              loading={isGenerating}
+              disabled={isGenerating}
+              icon={<ThunderboltOutlined />}
+              style={{ 
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                borderColor: 'transparent',
+                height: 40,
+                fontWeight: 500
+              }}
             >
-              <ReloadOutlined /> 恢复会话
+              {isGenerating ? '生成中...' : '批量生成教案'}
             </Button>
-          )}
-          <Button 
-            type="primary" 
-            onClick={generateLessonPlans} 
-            loading={isGenerating}
-            disabled={isGenerating}
-            size="large"
-            className="generate-button"
-          >
-            {isGenerating ? `生成中... ${Math.round(progress)}%` : '🌸 批量生成教案'}
-          </Button>
+          </div>
         </div>
       </Header>
 
-      <Content className="main-content">
-        <div className="card-container">
-          {isGenerating && (
-            <Card className="info-card ghibli-card" style={{ marginBottom: 16 }}>
-              <div style={{ textAlign: 'center' }}>
-                <Progress percent={Math.round(progress)} status="active" />
-                <Text>正在生成教案... {sessionStatus === 'generating' && '（刷新页面后可点击"恢复会话"继续查看）'}</Text>
-              </div>
-            </Card>
-          )}
-
-          {backendLogs.length > 0 && (
+      <Content style={{ padding: '24px', maxWidth: 1400, margin: '0 auto', width: '100%' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: backendLogs.length > 0 || generationResults.length > 0 ? '1fr 400px' : '1fr', gap: 24 }}>
+          <div>
             <Card 
-              title={<span className="card-title">📋 生成日志</span>}
-              className="info-card ghibli-card"
-              style={{ marginBottom: 16 }}
+              style={{ 
+                background: 'rgba(255,255,255,0.03)', 
+                borderRadius: 16, 
+                border: '1px solid rgba(255,255,255,0.08)',
+                marginBottom: 24
+              }}
+              bodyStyle={{ padding: 24 }}
             >
-              <div style={{ maxHeight: 200, overflow: 'auto', backgroundColor: '#1e1e1e', padding: 12, borderRadius: 8 }}>
-                {backendLogs.map((log, index) => (
-                  <div key={index} style={{ color: '#4ec9b0', fontFamily: 'monospace', fontSize: 12 }}>
-                    <span style={{ color: '#6a9955' }}>[{log.time}]</span> {log.message}
-                  </div>
-                ))}
-                <div ref={logsEndRef} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                <div style={{ width: 4, height: 20, background: 'linear-gradient(180deg, #667eea 0%, #764ba2 100%)', borderRadius: 2 }} />
+                <Title level={5} style={{ margin: 0, color: '#fff' }}>固定课程信息</Title>
               </div>
+              <Form layout="vertical">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+                  <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.7)' }}>院系</span>}>
+                    <Input 
+                      value={fixedInfo.院系} 
+                      onChange={(e) => setFixedInfo({ ...fixedInfo, 院系: e.target.value })} 
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                    />
+                  </Form.Item>
+                  <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.7)' }}>授课班级</span>}>
+                    <Input 
+                      value={fixedInfo.授课班级} 
+                      onChange={(e) => setFixedInfo({ ...fixedInfo, 授课班级: e.target.value })} 
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                    />
+                  </Form.Item>
+                  <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.7)' }}>专业名称</span>}>
+                    <Input 
+                      value={fixedInfo.专业名称} 
+                      onChange={(e) => setFixedInfo({ ...fixedInfo, 专业名称: e.target.value })} 
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                    />
+                  </Form.Item>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+                  <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.7)' }}>课程名称</span>}>
+                    <Input 
+                      value={fixedInfo.课程名称} 
+                      onChange={(e) => setFixedInfo({ ...fixedInfo, 课程名称: e.target.value })} 
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                    />
+                  </Form.Item>
+                  <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.7)' }}>授课教师</span>}>
+                    <Input 
+                      value={fixedInfo.授课教师} 
+                      onChange={(e) => setFixedInfo({ ...fixedInfo, 授课教师: e.target.value })} 
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                    />
+                  </Form.Item>
+                </div>
+                <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.7)' }}>课程描述 <span style={{ color: 'rgba(255,255,255,0.4)' }}>（选填）</span></span>}>
+                  <TextArea
+                    value={fixedInfo.课程描述}
+                    onChange={(e) => setFixedInfo({ ...fixedInfo, 课程描述: e.target.value })}
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                    placeholder="描述整个课程的目标、特点..."
+                    rows={2}
+                  />
+                </Form.Item>
+                <Form.Item label={<span style={{ color: '#ff6b6b' }}>🔑 DeepSeek API Key *</span>} required>
+                  <Input.Password
+                    value={apiKey}
+                    onChange={handleApiKeyChange}
+                    style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                    placeholder="请输入您的DeepSeek API Key"
+                  />
+                </Form.Item>
+              </Form>
             </Card>
-          )}
 
-          {generationResults.length > 0 && (
             <Card 
-              title={<span className="card-title">✅ 生成结果</span>}
-              className="info-card ghibli-card"
-              style={{ marginBottom: 16 }}
+              style={{ 
+                background: 'rgba(255,255,255,0.03)', 
+                borderRadius: 16, 
+                border: '1px solid rgba(255,255,255,0.08)'
+              }}
+              bodyStyle={{ padding: 24 }}
+              title={
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 4, height: 20, background: 'linear-gradient(180deg, #667eea 0%, #764ba2 100%)', borderRadius: 2 }} />
+                  <span style={{ color: '#fff', fontWeight: 600 }}>课时信息</span>
+                  <Badge count={lessons.length} style={{ background: '#667eea' }} />
+                </div>
+              }
+              extra={
+                <Button 
+                  type="dashed" 
+                  onClick={addLesson}
+                  style={{ color: '#667eea', borderColor: 'rgba(102,126,234,0.5)' }}
+                >
+                  + 添加课时
+                </Button>
+              }
             >
               <List
-                dataSource={generationResults}
-                renderItem={(result, index) => (
-                  <List.Item key={index}>
-                    <Space>
-                      <Badge 
-                        status={result.status === '成功' ? 'success' : 'error'} 
-                        text={result.status}
-                      />
-                      <Text strong>{result.topic}</Text>
-                      {result.file_url && (
-                        <Button 
-                          type="link" 
-                          href={`${API_BASE_URL}${result.file_url}`} 
-                          target="_blank"
-                        >
-                          📥 下载教案
-                        </Button>
-                      )}
-                      {result.message && <Text type="secondary">{result.message}</Text>}
-                    </Space>
+                dataSource={lessons}
+                renderItem={(lesson) => (
+                  <List.Item style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, marginBottom: 16, background: 'rgba(255,255,255,0.02)', padding: 16 }}>
+                    <div style={{ width: '100%' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                        <Tag color="#667eea" style={{ borderRadius: 6 }}>课时 {lesson.id}</Tag>
+                        <Button danger size="small" type="text" onClick={() => removeLesson(lesson.id)}>删除</Button>
+                      </div>
+                      <Form layout="vertical">
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                          <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>课题名称</span>} style={{ marginBottom: 12 }}>
+                            <Input 
+                              value={lesson.课题名称} 
+                              onChange={(e) => updateLesson(lesson.id, '课题名称', e.target.value)} 
+                              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                            />
+                          </Form.Item>
+                          <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>授课地点</span>} style={{ marginBottom: 12 }}>
+                            <Input 
+                              value={lesson.授课地点} 
+                              onChange={(e) => updateLesson(lesson.id, '授课地点', e.target.value)} 
+                              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                            />
+                          </Form.Item>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                          <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>授课时间</span>} style={{ marginBottom: 12 }}>
+                            <Input 
+                              value={lesson.授课时间} 
+                              onChange={(e) => updateLesson(lesson.id, '授课时间', e.target.value)} 
+                              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                            />
+                          </Form.Item>
+                          <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>授课学时</span>} style={{ marginBottom: 12 }}>
+                            <Input 
+                              value={lesson.授课学时} 
+                              onChange={(e) => updateLesson(lesson.id, '授课学时', e.target.value)} 
+                              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                            />
+                          </Form.Item>
+                          <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>授课类型</span>} style={{ marginBottom: 12 }}>
+                            <Input 
+                              value={lesson.授课类型} 
+                              onChange={(e) => updateLesson(lesson.id, '授课类型', e.target.value)} 
+                              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                            />
+                          </Form.Item>
+                        </div>
+                        <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>本节课描述 <span style={{ color: 'rgba(255,255,255,0.3)' }}>（选填）</span></span>} style={{ marginBottom: 12 }}>
+                          <TextArea
+                            value={lesson.用户描述}
+                            onChange={(e) => updateLesson(lesson.id, '用户描述', e.target.value)}
+                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }}
+                            placeholder="描述上课内容、想法..."
+                            rows={2}
+                          />
+                        </Form.Item>
+                        <Form.Item label={<span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12 }}>参考文档 <span style={{ color: 'rgba(255,255,255,0.3)' }}>（选填）</span></span>} style={{ marginBottom: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                            {lessonDocuments[lesson.id] && lessonDocuments[lesson.id].map((doc, index) => (
+                              <Tag 
+                                key={index} 
+                                icon={<FileOutlined />}
+                                closable 
+                                onClose={() => handleDeleteDocument(lesson.id, doc.filename)}
+                                style={{ 
+                                  background: 'rgba(102,126,234,0.2)', 
+                                  border: '1px solid rgba(102,126,234,0.3)',
+                                  color: '#a8b1ff',
+                                  padding: '4px 8px'
+                                }}
+                              >
+                                {doc.filename} ({formatFileSize(doc.file_size)})
+                              </Tag>
+                            ))}
+                            <Upload
+                              beforeUpload={(file) => { handleDocumentUpload(lesson.id, file); return false; }}
+                              showUploadList={false}
+                              accept=".docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.pdf"
+                            >
+                              <Button 
+                                size="small" 
+                                icon={<CloudUploadOutlined />}
+                                style={{ 
+                                  background: 'rgba(255,255,255,0.05)', 
+                                  border: '1px solid rgba(255,255,255,0.1)',
+                                  color: 'rgba(255,255,255,0.7)'
+                                }}
+                              >
+                                上传文档
+                              </Button>
+                            </Upload>
+                          </div>
+                        </Form.Item>
+                      </Form>
+                    </div>
                   </List.Item>
                 )}
               />
             </Card>
-          )}
+          </div>
 
-          <Card 
-            title={<span className="card-title">📚 固定课程信息</span>}
-            className="info-card ghibli-card"
-          >
-            <Form layout="vertical">
-              <div className="form-row">
-                <Form.Item label="院系" className="ghibli-form-item form-col-3">
-                  <Input value={fixedInfo.院系} onChange={(e) => setFixedInfo({ ...fixedInfo, 院系: e.target.value })} className="ghibli-input" />
-                </Form.Item>
-                <Form.Item label="授课班级" className="ghibli-form-item form-col-3">
-                  <Input value={fixedInfo.授课班级} onChange={(e) => setFixedInfo({ ...fixedInfo, 授课班级: e.target.value })} className="ghibli-input" />
-                </Form.Item>
-                <Form.Item label="专业名称" className="ghibli-form-item form-col-3">
-                  <Input value={fixedInfo.专业名称} onChange={(e) => setFixedInfo({ ...fixedInfo, 专业名称: e.target.value })} className="ghibli-input" />
-                </Form.Item>
-              </div>
-              <div className="form-row">
-                <Form.Item label="课程名称" className="ghibli-form-item form-col-2">
-                  <Input value={fixedInfo.课程名称} onChange={(e) => setFixedInfo({ ...fixedInfo, 课程名称: e.target.value })} className="ghibli-input" />
-                </Form.Item>
-                <Form.Item label="授课教师" className="ghibli-form-item form-col-2">
-                  <Input value={fixedInfo.授课教师} onChange={(e) => setFixedInfo({ ...fixedInfo, 授课教师: e.target.value })} className="ghibli-input" />
-                </Form.Item>
-              </div>
-              <div className="form-row">
-                <Form.Item label={<span>📋 课程描述 <span style={{ color: '#999' }}>（选填）</span></span>} className="ghibli-form-item form-col-full">
-                  <TextArea
-                    value={fixedInfo.课程描述}
-                    onChange={(e) => setFixedInfo({ ...fixedInfo, 课程描述: e.target.value })}
-                    className="ghibli-textarea"
-                    placeholder="描述整个课程的目标、特点..."
-                    rows={3}
-                  />
-                </Form.Item>
-              </div>
-              <div className="form-row">
-                <Form.Item label={<span>🔑 DeepSeek API Key <span style={{ color: '#ff4d4f' }}>*</span></span>} className="ghibli-form-item form-col-full" required>
-                  <Input.Password
-                    value={apiKey}
-                    onChange={handleApiKeyChange}
-                    className="ghibli-input"
-                    placeholder="请输入您的DeepSeek API Key"
-                  />
-                </Form.Item>
-              </div>
-            </Form>
-          </Card>
-
-          <Card 
-            title={<span className="card-title">📝 课时信息</span>}
-            extra={
-              <Button type="dashed" onClick={addLesson} className="add-lesson-button">
-                ➕ 添加课时
-              </Button>
-            }
-            className="info-card ghibli-card"
-          >
-            <List
-              dataSource={lessons}
-              renderItem={(lesson) => (
-                <List.Item key={lesson.id} className="lesson-item" actions={[
-                  <Tooltip title="删除课时" key="delete">
-                    <Button danger size="small" onClick={() => removeLesson(lesson.id)}>🗑️</Button>
-                  </Tooltip>
-                ]}>
-                  <Card size="small" title={<span>📖 课时 {lesson.id}</span>} className="lesson-card" style={{ width: '100%' }}>
-                    <Form layout="vertical">
-                      <div className="form-row">
-                        <Form.Item label="课题名称" className="ghibli-form-item form-col-2">
-                          <Input value={lesson.课题名称} onChange={(e) => updateLesson(lesson.id, '课题名称', e.target.value)} className="ghibli-input" />
-                        </Form.Item>
-                        <Form.Item label="授课地点" className="ghibli-form-item form-col-2">
-                          <Input value={lesson.授课地点} onChange={(e) => updateLesson(lesson.id, '授课地点', e.target.value)} className="ghibli-input" />
-                        </Form.Item>
-                      </div>
-                      <div className="form-row">
-                        <Form.Item label="授课时间" className="ghibli-form-item form-col-3">
-                          <Input value={lesson.授课时间} onChange={(e) => updateLesson(lesson.id, '授课时间', e.target.value)} className="ghibli-input" />
-                        </Form.Item>
-                        <Form.Item label="授课学时" className="ghibli-form-item form-col-3">
-                          <Input value={lesson.授课学时} onChange={(e) => updateLesson(lesson.id, '授课学时', e.target.value)} className="ghibli-input" />
-                        </Form.Item>
-                        <Form.Item label="授课类型" className="ghibli-form-item form-col-3">
-                          <Input value={lesson.授课类型} onChange={(e) => updateLesson(lesson.id, '授课类型', e.target.value)} className="ghibli-input" />
-                        </Form.Item>
-                      </div>
-                      <Form.Item label={<span>💭 本节课描述 <span style={{ color: '#999' }}>（选填）</span></span>} className="ghibli-form-item">
-                        <TextArea
-                          value={lesson.用户描述}
-                          onChange={(e) => updateLesson(lesson.id, '用户描述', e.target.value)}
-                          className="ghibli-textarea"
-                          placeholder="描述上课内容、想法..."
-                          rows={3}
-                        />
-                      </Form.Item>
-                      <Form.Item label={<span>📎 参考文档 <span style={{ color: '#999' }}>（选填）</span></span>} className="ghibli-form-item">
-                        <div className="document-upload-section">
-                          {lessonDocuments[lesson.id] && lessonDocuments[lesson.id].length > 0 && (
-                            <div className="uploaded-documents-list">
-                              {lessonDocuments[lesson.id].map((doc, index) => (
-                                <div key={index} className="document-item">
-                                  <FileOutlined className="document-icon" />
-                                  <Text>{doc.filename}</Text>
-                                  <Text type="secondary">({formatFileSize(doc.file_size)})</Text>
-                                  <Button size="small" danger onClick={() => handleDeleteDocument(lesson.id, doc.filename)}>
-                                    <DeleteOutlined />
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          <Upload
-                            beforeUpload={(file) => { handleDocumentUpload(lesson.id, file); return false; }}
-                            showUploadList={false}
-                            accept=".docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.pdf"
-                          >
-                            <Button icon={<UploadOutlined />}>上传文档</Button>
-                          </Upload>
-                        </div>
-                      </Form.Item>
-                    </Form>
-                  </Card>
-                </List.Item>
+          {(backendLogs.length > 0 || generationResults.length > 0) && (
+            <div style={{ position: 'sticky', top: 24 }}>
+              {isGenerating && (
+                <Card 
+                  style={{ 
+                    background: 'rgba(255,255,255,0.03)', 
+                    borderRadius: 16, 
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    marginBottom: 16
+                  }}
+                  bodyStyle={{ padding: 16 }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <SyncOutlined spin style={{ color: '#667eea', fontSize: 18 }} />
+                    <div>
+                      <Text style={{ color: '#fff', fontWeight: 500 }}>正在生成教案...</Text>
+                      {currentTopic && <Text style={{ color: 'rgba(255,255,255,0.5)', marginLeft: 8 }}>{currentTopic}</Text>}
+                    </div>
+                  </div>
+                </Card>
               )}
-            />
-          </Card>
+
+              {backendLogs.length > 0 && (
+                <Card 
+                  style={{ 
+                    background: 'rgba(255,255,255,0.03)', 
+                    borderRadius: 16, 
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    marginBottom: 16
+                  }}
+                  bodyStyle={{ padding: 0 }}
+                  title={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 20px 0' }}>
+                      <FileTextOutlined style={{ color: '#667eea' }} />
+                      <span style={{ color: '#fff', fontWeight: 500 }}>实时日志</span>
+                      {isGenerating && <SyncOutlined spin style={{ color: '#667eea', marginLeft: 8 }} />}
+                    </div>
+                  }
+                >
+                  <div style={{ 
+                    maxHeight: 300, 
+                    overflow: 'auto', 
+                    background: '#1a1a2e', 
+                    padding: 12,
+                    borderRadius: '0 0 12px 12px'
+                  }}>
+                    {backendLogs.map((log, index) => renderLogItem(log, index))}
+                    <div ref={logsEndRef} />
+                  </div>
+                </Card>
+              )}
+
+              {generationResults.length > 0 && (
+                <Card 
+                  style={{ 
+                    background: 'rgba(255,255,255,0.03)', 
+                    borderRadius: 16, 
+                    border: '1px solid rgba(255,255,255,0.08)'
+                  }}
+                  bodyStyle={{ padding: 16 }}
+                  title={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {generationResults.every(r => r.status === '成功') ? 
+                        <CheckCircleOutlined style={{ color: '#51cf66' }} /> : 
+                        <CloseCircleOutlined style={{ color: '#ff6b6b' }} />
+                      }
+                      <span style={{ color: '#fff', fontWeight: 500 }}>生成结果</span>
+                    </div>
+                  }
+                >
+                  <List
+                    dataSource={generationResults}
+                    renderItem={(result) => (
+                      <List.Item style={{ border: 'none', padding: '8px 0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+                          {result.status === '成功' ? 
+                            <CheckCircleOutlined style={{ color: '#51cf66' }} /> : 
+                            <CloseCircleOutlined style={{ color: '#ff6b6b' }} />
+                          }
+                          <Text style={{ color: '#fff', flex: 1 }}>{result.topic}</Text>
+                          {result.file_url && (
+                            <Button 
+                              type="link" 
+                              href={`${API_BASE_URL}${result.file_url}`} 
+                              target="_blank"
+                              style={{ color: '#667eea', padding: 0 }}
+                            >
+                              下载
+                            </Button>
+                          )}
+                        </div>
+                      </List.Item>
+                    )}
+                  />
+                </Card>
+              )}
+            </div>
+          )}
         </div>
       </Content>
-      <Footer className="footer">
+      <Footer style={{ 
+        textAlign: 'center', 
+        background: 'transparent', 
+        color: 'rgba(255,255,255,0.3)',
+        padding: '24px 50px'
+      }}>
         相城中专教案生成系统 ©{new Date().getFullYear()}
       </Footer>
     </Layout>

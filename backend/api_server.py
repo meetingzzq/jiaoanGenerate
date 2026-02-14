@@ -441,24 +441,23 @@ def upload_document():
         if file_ext not in allowed_extensions:
             return jsonify({'success': False, 'message': f'不支持的文件格式: {file_ext}'}), 400
         
+        file_content = file.read()
+        original_size = len(file_content)
+        print(f"接收到文件: {file.filename}, 原始大小: {original_size} 字节")
+        
         safe_filename = f"{lesson_id}_{int(time.time())}_{file.filename}"
         file_path = os.path.join(UPLOAD_DIR, safe_filename)
         
-        file.save(file_path)
+        with open(file_path, 'wb') as f:
+            f.write(file_content)
         
-        import gc
-        gc.collect()
+        saved_size = os.path.getsize(file_path)
+        print(f"文件已保存到: {file_path}")
+        print(f"保存后大小: {saved_size} 字节")
         
-        time.sleep(0.1)
-        
-        print(f"文档已上传到: {file_path}")
-        print(f"UPLOAD_DIR: {UPLOAD_DIR}")
-        print(f"文件是否存在: {os.path.exists(file_path)}")
-        if os.path.exists(file_path):
-            print(f"文件大小: {os.path.getsize(file_path)}")
-        
-        if not os.path.exists(file_path):
-            return jsonify({'success': False, 'message': '文件保存失败'}), 500
+        if saved_size != original_size:
+            print(f"警告: 文件大小不匹配! 原始: {original_size}, 保存: {saved_size}")
+            return jsonify({'success': False, 'message': '文件保存不完整'}), 500
         
         content = extract_document_content(file_path)
         
@@ -466,14 +465,14 @@ def upload_document():
             print(f"警告: 无法提取文档内容，但文件存在")
             content = ""
         
-        content_summary = get_document_summary(file_path, max_length=500)
+        content_summary = content[:500] if content else ""
         
         doc_info = {
             'filename': file.filename,
             'filepath': file_path,
             'content': content,
             'content_summary': content_summary,
-            'file_size': os.path.getsize(file_path),
+            'file_size': saved_size,
             'upload_time': time.strftime('%Y-%m-%d %H:%M:%S')
         }
         

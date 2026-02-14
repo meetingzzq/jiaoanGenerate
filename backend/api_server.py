@@ -38,6 +38,9 @@ DATA_DIR = RENDER_DATA_DIR if RENDER_DATA_DIR else BASE_DIR
 UPLOAD_DIR = os.path.join(DATA_DIR, 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+SESSION_DIR = os.path.join(DATA_DIR, 'sessions')
+os.makedirs(SESSION_DIR, exist_ok=True)
+
 uploaded_documents = {}
 
 app = Flask(__name__)
@@ -54,6 +57,26 @@ log_queues_lock = threading.Lock()
 
 generation_sessions = {}
 sessions_lock = threading.Lock()
+
+
+def save_session_to_file(session_id, session_data):
+    try:
+        session_file = os.path.join(SESSION_DIR, f'{session_id}.json')
+        with open(session_file, 'w', encoding='utf-8') as f:
+            json.dump(session_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"保存会话文件失败: {e}")
+
+
+def load_session_from_file(session_id):
+    try:
+        session_file = os.path.join(SESSION_DIR, f'{session_id}.json')
+        if os.path.exists(session_file):
+            with open(session_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"加载会话文件失败: {e}")
+    return None
 
 class SessionLogHandler(logging.Handler):
     """自定义日志处理器，将日志直接添加到session并打印到终端"""
@@ -188,11 +211,20 @@ def update_session(session_id, data):
             }
         generation_sessions[session_id].update(data)
         generation_sessions[session_id]['updated_at'] = datetime.now().isoformat()
+        # 保存到文件
+        save_session_to_file(session_id, generation_sessions[session_id])
 
 
 def get_session(session_id):
     with sessions_lock:
-        return generation_sessions.get(session_id)
+        session = generation_sessions.get(session_id)
+        if session:
+            return session
+        # 尝试从文件加载
+        session = load_session_from_file(session_id)
+        if session:
+            generation_sessions[session_id] = session
+        return session
 
 
 def add_log_to_session(session_id, log_entries):

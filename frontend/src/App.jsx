@@ -30,6 +30,7 @@ function App() {
   const [uploadingFiles, setUploadingFiles] = useState({});
   const [activeTab, setActiveTab] = useState('form');
   const [expandedLesson, setExpandedLesson] = useState(1);
+  const [isRestoringSession, setIsRestoringSession] = useState(false);
   
   const logsEndRef = useRef(null);
   const pollIntervalRef = useRef(null);
@@ -54,8 +55,12 @@ function App() {
     if (savedSessionId && savedSessionTime) {
       const sessionAge = Date.now() - parseInt(savedSessionTime);
       if (sessionAge < 30 * 60 * 1000) {
+        setIsRestoringSession(true);
+        setActiveTab('loading');
         setCurrentSessionId(savedSessionId);
-        checkSessionStatus(savedSessionId);
+        checkSessionStatus(savedSessionId).finally(() => {
+          setIsRestoringSession(false);
+        });
       } else {
         localStorage.removeItem('currentSessionId');
         localStorage.removeItem('sessionStartTime');
@@ -664,16 +669,16 @@ function App() {
             </div>
           </section>
 
-          {(generationResults.length > 0 || isGenerating || sessionStatus === 'generating' || sessionStatus === 'completed' || sessionStatus === 'error') && (
+          {(generationResults.length > 0 || isGenerating || isRestoringSession || sessionStatus === 'generating' || sessionStatus === 'completed' || sessionStatus === 'error') && (
             <section className="status-section">
               <div className="tabs">
-                {(isGenerating || sessionStatus === 'generating') && (
+                {(isGenerating || isRestoringSession || sessionStatus === 'generating') && (
                   <button 
                     className={`tab ${activeTab === 'loading' ? 'active' : ''}`}
                     onClick={() => setActiveTab('loading')}
                   >
                     <span className="pulse-dot"></span>
-                    生成中
+                    {isRestoringSession ? '恢复中' : '生成中'}
                   </button>
                 )}
                 <button 
@@ -686,7 +691,7 @@ function App() {
               </div>
 
               <div className="tab-content">
-                {activeTab === 'loading' && (isGenerating || sessionStatus === 'generating') && (
+                {activeTab === 'loading' && (isGenerating || isRestoringSession || sessionStatus === 'generating') && (
                   <div className="loading-panel">
                     <div className="loading-animation">
                       <div className="orbit">
@@ -697,8 +702,8 @@ function App() {
                       </div>
                     </div>
                     <div className="loading-text">
-                      <h3>正在生成教案</h3>
-                      <p className="loading-topic">{currentTopic || '准备中...'}</p>
+                      <h3>{isRestoringSession ? '正在恢复生成状态' : '正在生成教案'}</h3>
+                      <p className="loading-topic">{currentTopic || (isRestoringSession ? '检查之前的进度...' : '准备中...')}</p>
                       <div className="loading-dots">
                         <span></span>
                         <span></span>
@@ -707,7 +712,7 @@ function App() {
                     </div>
                     <div className="loading-status">
                       <span className="status-icon">✨</span>
-                      <span>AI 正在为您精心编写...</span>
+                      <span>{isRestoringSession ? '正在连接服务器恢复进度...' : 'AI 正在为您精心编写...'}</span>
                     </div>
                   </div>
                 )}

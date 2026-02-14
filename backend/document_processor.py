@@ -12,16 +12,25 @@ def extract_text_from_docx(file_path):
     从Word文档(.docx)中提取文本内容
     """
     try:
-        doc = Document(file_path)
+        print(f"开始读取Word文档: {file_path}")
+        print(f"文件是否存在: {os.path.exists(file_path)}")
+        print(f"文件大小: {os.path.getsize(file_path) if os.path.exists(file_path) else 'N/A'}")
+        
+        if not os.path.exists(file_path):
+            print(f"错误: 文件不存在 - {file_path}")
+            return None
+        
+        with open(file_path, 'rb') as f:
+            file_content = f.read()
+        
+        doc = Document(io.BytesIO(file_content))
         full_text = []
         
-        # 提取段落文本
         print(f"  提取段落: {len(doc.paragraphs)} 个")
         for i, para in enumerate(doc.paragraphs):
             if para.text.strip():
                 full_text.append(para.text)
         
-        # 提取表格文本
         print(f"  提取表格: {len(doc.tables)} 个")
         for table_idx, table in enumerate(doc.tables, 1):
             full_text.append(f"\n--- 表格 {table_idx} ---")

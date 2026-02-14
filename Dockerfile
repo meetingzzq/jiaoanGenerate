@@ -25,5 +25,5 @@ EXPOSE $PORT
 # Set working directory to backend
 WORKDIR /app/backend
 
-# Run the application with gunicorn
-CMD gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 300
+# Run the application with Flask dev server
+CMD python api_server.py

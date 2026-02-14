@@ -3,8 +3,40 @@
 """
 import os
 import io
+import zipfile
 from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
+
+
+def detect_file_format(file_path):
+    """
+    检测文件的真实格式（通过文件头）
+    返回: 'docx', 'doc', 'pdf', 'zip', 'rtf', 'txt', 'unknown'
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            header = f.read(8)
+            
+        # DOCX/XLSX/PPTX 都是 ZIP 格式，以 PK 开头
+        if header[:2] == b'PK':
+            return 'zip_based'
+        
+        # DOC (OLE格式) 以 D0 CF 11 E0 开头
+        if header[:4] == b'\xD0\xCF\x11\xE0':
+            return 'doc'
+        
+        # PDF 以 %PDF 开头
+        if header[:4] == b'%PDF':
+            return 'pdf'
+        
+        # RTF 以 {\rtf 开头
+        if header[:5] == b'{\\rtf':
+            return 'rtf'
+        
+        return 'unknown'
+    except Exception as e:
+        print(f"检测文件格式失败: {e}")
+        return 'unknown'
 
 
 def extract_text_from_docx(file_path):
@@ -26,7 +58,34 @@ def extract_text_from_docx(file_path):
             print(f"错误: 文件太小，可能已损坏")
             return None
         
-        doc = Document(file_path)
+        real_format = detect_file_format(file_path)
+        print(f"检测到文件真实格式: {real_format}")
+        
+        if real_format == 'doc':
+            print("警告: 文件扩展名是.docx，但实际是旧版.doc格式(OLE)")
+            print("尝试使用其他方法读取...")
+            return extract_text_from_doc_ole(file_path)
+        
+        if real_format == 'rtf':
+            print("警告: 文件扩展名是.docx，但实际是RTF格式")
+            return extract_text_from_rtf(file_path)
+        
+        if real_format != 'zip_based':
+            print(f"警告: 文件可能不是有效的docx格式 (检测为: {real_format})")
+            if real_format == 'unknown':
+                with open(file_path, 'rb') as f:
+                    sample = f.read(100)
+                print(f"文件头(十六进制): {sample[:20].hex()}")
+                print(f"文件头(文本): {sample[:20]}")
+        
+        with open(file_path, 'rb') as f:
+            file_content = f.read()
+        
+        if not zipfile.is_zipfile(io.BytesIO(file_content)):
+            print("错误: 文件不是有效的ZIP格式，可能已损坏或格式不正确")
+            return try_read_as_text(file_path)
+        
+        doc = Document(io.BytesIO(file_content))
         full_text = []
         
         print(f"  提取段落: {len(doc.paragraphs)} 个")
@@ -52,6 +111,114 @@ def extract_text_from_docx(file_path):
         print(f"读取Word文档失败: {str(e)}")
         import traceback
         traceback.print_exc()
+        return try_read_as_text(file_path)
+
+
+def try_read_as_text(file_path):
+    """
+    尝试将文件作为纯文本读取（最后的回退方案）
+    """
+    try:
+        print("尝试作为纯文本读取...")
+        encodings = ['utf-8', 'gbk', 'gb2312', 'utf-16', 'latin-1']
+        
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as f:
+                    content = f.read()
+                    if content and len(content) > 10:
+                        print(f"  使用编码 {encoding} 成功读取，字符数: {len(content)}")
+                        return content
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        
+        print("无法作为文本读取")
+        return None
+    except Exception as e:
+        print(f"文本读取失败: {e}")
+        return None
+
+
+def extract_text_from_doc_ole(file_path):
+    """
+    从OLE格式的.doc文件中提取文本（旧版Word格式）
+    """
+    try:
+        print("尝试读取OLE格式的.doc文件...")
+        
+        try:
+            import subprocess
+            result = subprocess.run(['antiword', file_path], capture_output=True, text=True, timeout=30)
+            if result.returncode == 0 and result.stdout.strip():
+                print("  使用antiword读取成功")
+                return result.stdout
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        
+        try:
+            import olefile
+            ole = olefile.OleFileIO(file_path)
+            if ole.exists('WordDocument'):
+                stream = ole.openstream('WordDocument')
+                content = stream.read()
+                text_parts = []
+                for byte in content:
+                    if 32 <= byte < 127:
+                        text_parts.append(chr(byte))
+                    elif byte > 127:
+                        try:
+                            text_parts.append(chr(byte))
+                        except:
+                            pass
+                result = ''.join(text_parts)
+                if len(result) > 50:
+                    print(f"  使用olefile提取到 {len(result)} 字符")
+                    return result
+        except ImportError:
+            print("  olefile未安装")
+        except Exception as e:
+            print(f"  olefile读取失败: {e}")
+        
+        return try_read_as_text(file_path)
+        
+    except Exception as e:
+        print(f"读取OLE文档失败: {str(e)}")
+        return None
+
+
+def extract_text_from_rtf(file_path):
+    """
+    从RTF文件中提取文本
+    """
+    try:
+        print("尝试读取RTF格式文件...")
+        
+        try:
+            from striprtf.striprtf import rtf_to_text
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                rtf_content = f.read()
+            text = rtf_to_text(rtf_content)
+            if text.strip():
+                print(f"  RTF提取成功，字符数: {len(text)}")
+                return text
+        except ImportError:
+            print("  striprtf未安装，尝试手动解析")
+        
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        import re
+        text = re.sub(r'\\[a-z]+\d*\s*', '', content)
+        text = re.sub(r'[{}]', '', text)
+        text = re.sub(r'\\[^a-z]', '', text)
+        
+        if text.strip():
+            print(f"  手动RTF提取，字符数: {len(text)}")
+            return text.strip()
+        
+        return None
+    except Exception as e:
+        print(f"读取RTF失败: {e}")
         return None
 
 

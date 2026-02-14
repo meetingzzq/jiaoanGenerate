@@ -10,3 +10,7 @@ gunicorn==21.2.0
 python-pptx==0.6.23
 openpyxl==3.1.2
 PyPDF2==3.0.1
+
+# 旧版文档格式支持
+olefile==0.46
+striprtf==0.0.26

@@ -663,7 +663,7 @@ function App() {
           {(generationResults.length > 0 || isGenerating || sessionStatus === 'generating' || sessionStatus === 'completed' || sessionStatus === 'error') && (
             <section className="status-section">
               <div className="tabs">
-                {isGenerating && (
+                {(isGenerating || sessionStatus === 'generating') && (
                   <button 
                     className={`tab ${activeTab === 'loading' ? 'active' : ''}`}
                     onClick={() => setActiveTab('loading')}
@@ -682,7 +682,7 @@ function App() {
               </div>
 
               <div className="tab-content">
-                {activeTab === 'loading' && isGenerating && (
+                {activeTab === 'loading' && (isGenerating || sessionStatus === 'generating') && (
                   <div className="loading-panel">
                     <div className="loading-animation">
                       <div className="orbit">

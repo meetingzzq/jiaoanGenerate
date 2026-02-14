@@ -11,15 +11,14 @@ import time
 from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 
-# 获取资源路径（支持PyInstaller打包）
+RENDER_DATA_DIR = os.environ.get('RENDER_DATA_DIR', '')
+
 def get_resource_path(relative_path):
     """获取资源文件的绝对路径，支持开发环境和PyInstaller打包环境"""
     if hasattr(sys, '_MEIPASS'):
-        # PyInstaller打包后的临时目录
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath('.'), relative_path)
 
-# 获取基础目录
 def get_base_dir():
     """获取程序运行的基础目录"""
     if hasattr(sys, '_MEIPASS'):
@@ -33,24 +32,21 @@ from main import batch_generate_lesson_plans, generate_lesson_plan_doc
 from config import DEFAULT_FIXED_COURSE_INFO
 from document_processor import extract_document_content, get_document_summary
 
-# 上传文档存储目录
-UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
+DATA_DIR = RENDER_DATA_DIR if RENDER_DATA_DIR else BASE_DIR
+
+UPLOAD_DIR = os.path.join(DATA_DIR, 'uploads')
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# 存储已上传的文档信息 {lesson_id: [{filename, filepath, content_summary}, ...]}
 uploaded_documents = {}
 
 app = Flask(__name__)
-CORS(app)  # 启用CORS
+CORS(app)
 
-# 静态文件目录
 STATIC_DIR = os.path.join(BASE_DIR, 'frontend', 'dist')
-OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
+OUTPUT_DIR = os.path.join(DATA_DIR, 'output')
 
-# 确保输出目录存在
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# 全局日志队列，用于存储生成过程中的日志
 log_queues = {}
 log_queues_lock = threading.Lock()
 

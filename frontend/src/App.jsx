@@ -4,6 +4,8 @@ import { UploadOutlined, FileOutlined, DeleteOutlined } from '@ant-design/icons'
 import axios from 'axios';
 import './App.css';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
 const { Header, Content, Footer } = Layout;
 const { Title, Text, Paragraph } = Typography;
 
@@ -81,7 +83,7 @@ function App() {
     }
     
     sessionIdRef.current = sessionId;
-    const eventSource = new EventSource(`/api/logs/${sessionId}`);
+    const eventSource = new EventSource(`${API_BASE_URL}/api/logs/${sessionId}`);
     
     eventSource.onopen = () => {
       setIsLogConnected(true);
@@ -193,7 +195,7 @@ function App() {
     formData.append('lesson_id', lessonId.toString());
 
     try {
-      const response = await axios.post('/api/upload-document', formData, {
+      const response = await axios.post(`${API_BASE_URL}/api/upload-document`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -221,7 +223,7 @@ function App() {
   // 删除文档
   const handleDeleteDocument = async (lessonId, filename) => {
     try {
-      const response = await axios.delete(`/api/documents/${lessonId}/${filename}`);
+      const response = await axios.delete(`${API_BASE_URL}/api/documents/${lessonId}/${filename}`);
 
       if (response.data.success) {
         // 更新文档列表
@@ -356,7 +358,7 @@ function App() {
           const currentLessonDocs = lessonDocuments[lesson.id] || [];
           
           // 发送实际请求，带上session ID、当前课时的文档和API Key
-          const response = await axios.post('/api/generate', {
+          const response = await axios.post(`${API_BASE_URL}/api/generate`, {
             fixed_course_info: fixedInfo,
             variable_course_info: {
               ...lesson,
@@ -877,7 +879,7 @@ function App() {
                       {result.file_url && (
                         <Button 
                           type="link" 
-                          href={result.file_url} 
+                          href={`${API_BASE_URL}${result.file_url}`} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="download-button"

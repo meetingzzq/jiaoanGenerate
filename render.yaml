@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: jiaoan-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 120
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: RENDER_DATA_DIR
+        value: /opt/render/project/data
+    disk:
+      name: data
+      mountPath: /opt/render/project/data
+      sizeGB: 1

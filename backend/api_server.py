@@ -52,8 +52,7 @@ OUTPUT_DIR = os.path.join(DATA_DIR, 'output')
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-log_queues = {}
-log_queues_lock = threading.Lock()
+
 
 generation_sessions = {}
 sessions_lock = threading.Lock()
@@ -65,7 +64,7 @@ def save_session_to_file(session_id, session_data):
         with open(session_file, 'w', encoding='utf-8') as f:
             json.dump(session_data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"保存会话文件失败: {e}")
+        logging.error(f"保存会话文件失败: {e}")
 
 
 def load_session_from_file(session_id):
@@ -75,7 +74,7 @@ def load_session_from_file(session_id):
             with open(session_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception as e:
-        print(f"加载会话文件失败: {e}")
+        logging.error(f"加载会话文件失败: {e}")
     return None
 
 class SessionLogHandler(logging.Handler):
@@ -151,55 +150,7 @@ class SessionLogger:
         self.logger.removeHandler(self.handler)
 
 
-class LogCapture:
-    def __init__(self, session_id):
-        self.session_id = session_id
-        self.original_stdout = sys.stdout
-        self.log_buffer = []
-        
-    def write(self, message):
-        self.original_stdout.write(message)
-        self.original_stdout.flush()
-        
-        if message.strip():
-            level = 'info'
-            msg = message.strip()
-            if '❌' in msg or '失败' in msg or '错误' in msg or 'Error' in msg:
-                level = 'error'
-            elif '✅' in msg or '成功' in msg or '完成' in msg or '🎉' in msg:
-                level = 'success'
-            elif '⚠️' in msg or '警告' in msg or 'Warning' in msg:
-                level = 'warning'
-            elif '📖' in msg or '📝' in msg or '📚' in msg or '📎' in msg:
-                level = 'progress'
-            
-            with log_queues_lock:
-                if self.session_id in log_queues:
-                    log_queues[self.session_id].put({
-                        'time': time.strftime('%H:%M:%S'),
-                        'message': message.strip(),
-                        'level': level
-                    })
-    
-    def flush(self):
-        self.original_stdout.flush()
 
-
-def get_log_queue(session_id):
-    with log_queues_lock:
-        if session_id not in log_queues:
-            log_queues[session_id] = queue.Queue()
-        return log_queues[session_id]
-
-
-def clear_log_queue(session_id):
-    with log_queues_lock:
-        if session_id in log_queues:
-            while not log_queues[session_id].empty():
-                try:
-                    log_queues[session_id].get_nowait()
-                except queue.Empty:
-                    break
 
 
 def update_session(session_id, data):
@@ -230,13 +181,7 @@ def get_session(session_id):
         return session
 
 
-def add_log_to_session(session_id, log_entries):
-    with sessions_lock:
-        if session_id in generation_sessions:
-            if isinstance(log_entries, list):
-                generation_sessions[session_id]['logs'].extend(log_entries)
-            else:
-                generation_sessions[session_id]['logs'].append(log_entries)
+
 
 
 @app.route('/api/session', methods=['POST'])
@@ -248,27 +193,14 @@ def create_session():
 
 @app.route('/api/session/<session_id>', methods=['GET'])
 def get_session_status(session_id):
-    print(f"[DEBUG] 获取会话状态: {session_id}")
+    logging.debug(f"获取会话状态: {session_id}")
     session = get_session(session_id)
-    print(f"[DEBUG] 会话数据: {session}")
+    logging.debug(f"会话数据: {session}")
     if not session:
-        print(f"[DEBUG] 会话不存在")
+        logging.debug(f"会话不存在")
         return jsonify({'success': False, 'message': '会话不存在'}), 404
     
-    with log_queues_lock:
-        log_queue = log_queues.get(session_id)
-        new_logs = []
-        if log_queue:
-            while not log_queue.empty():
-                try:
-                    new_logs.append(log_queue.get_nowait())
-                except queue.Empty:
-                    break
-    
-    if new_logs:
-        add_log_to_session(session_id, new_logs)
-    
-    print(f"[DEBUG] 返回会话状态: {session.get('status')}")
+    logging.debug(f"返回会话状态: {session.get('status')}")
     return jsonify({
         'success': True,
         'session': session
@@ -277,19 +209,13 @@ def get_session_status(session_id):
 
 @app.route('/api/logs/<session_id>/poll')
 def poll_logs(session_id):
-    last_index = int(request.args.get('last_index', 0))
     session = get_session(session_id)
     
     if not session:
         return jsonify({'success': False, 'message': '会话不存在'}), 404
     
-    all_logs = session.get('logs', [])
-    logs_to_return = all_logs[last_index:]
-    
     return jsonify({
         'success': True,
-        'logs': logs_to_return,
-        'total_logs': len(all_logs),
         'status': session.get('status'),
         'progress': session.get('progress', 0),
         'results': session.get('results', []),
@@ -297,48 +223,18 @@ def poll_logs(session_id):
     })
 
 
-@app.route('/api/logs/<session_id>')
-def stream_logs(session_id):
-    def generate():
-        log_queue = get_log_queue(session_id)
-        yield f"data: {json.dumps({'type': 'connected', 'message': '日志连接已建立'})}\n\n"
-        
-        try:
-            while True:
-                try:
-                    log_entry = log_queue.get(timeout=1)
-                    yield f"data: {json.dumps({'type': 'log', 'data': log_entry})}\n\n"
-                except queue.Empty:
-                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
-                    continue
-        except GeneratorExit:
-            pass
-    
-    return Response(
-        stream_with_context(generate()),
-        mimetype='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'X-Accel-Buffering': 'no'
-        }
-    )
+
 
 
 @app.route('/api/generate', methods=['POST'])
 def generate():
     session_id = request.headers.get('X-Session-ID', request.json.get('session_id', 'default'))
     
-    clear_log_queue(session_id)
     update_session(session_id, {
         'status': 'generating',
         'progress': 0,
-        'results': [],
-        'logs': []
+        'results': []
     })
-    
-    log_capture = LogCapture(session_id)
-    old_stdout = sys.stdout
-    sys.stdout = log_capture
     
     try:
         data = request.json
@@ -364,7 +260,7 @@ def generate():
             }), 400
         
         os.environ['DEEPSEEK_API_KEY'] = api_key
-        print(f"使用用户提供的DeepSeek API Key: {api_key[:10]}...")
+        logging.info(f"使用用户提供的DeepSeek API Key: {api_key[:10]}...")
 
         complete_fixed_info = {**DEFAULT_FIXED_COURSE_INFO, **fixed_course_info}
         course_info = {**complete_fixed_info, **variable_course_info}
@@ -376,7 +272,7 @@ def generate():
                 {'filename': doc.get('filename', '未命名文档'), 'content': doc.get('content', '')}
                 for doc in docs
             ]
-            print(f"已关联 {len(docs)} 个参考文档")
+            logging.info(f"已关联 {len(docs)} 个参考文档")
 
         topic = course_info.get('课题名称', f'课时{lesson_index}')
         safe_topic = topic.replace('\\', '-').replace('/', '-').replace(':', '-').replace('*', '-').replace('?', '-').replace('"', '-').replace('<', '-').replace('>', '-').replace('|', '-')
@@ -419,33 +315,23 @@ def generate():
     except Exception as e:
         update_session(session_id, {'status': 'error', 'error': str(e)})
         return jsonify({'success': False, 'message': f'生成失败: {str(e)}'}), 500
-    finally:
-        sys.stdout = old_stdout
 
 
 @app.route('/api/batch-generate', methods=['POST'])
 def batch_generate():
     session_id = request.headers.get('X-Session-ID', request.json.get('session_id', 'default'))
     
-    clear_log_queue(session_id)
     update_session(session_id, {
         'status': 'generating',
         'progress': 0,
         'results': [],
-        'logs': [],
         'total_lessons': 0,
         'current_lesson': 0
     })
     
-    session_logger = SessionLogger(session_id)
-    
-    # 配置 jiaoan logger，使其日志同时发送到前端和终端
+    # 配置 jiaoan logger
     jiaoan_logger = logging.getLogger('jiaoan')
     jiaoan_logger.setLevel(logging.DEBUG)
-    # 清除现有的 handlers，避免重复
-    for handler in jiaoan_logger.handlers[:]:
-        jiaoan_logger.removeHandler(handler)
-    jiaoan_logger.addHandler(session_logger.handler)
     
     try:
         data = request.json
@@ -470,10 +356,10 @@ def batch_generate():
             }), 400
         
         os.environ['DEEPSEEK_API_KEY'] = api_key
-        session_logger.info("=" * 50)
-        session_logger.info("🎯 开始批量生成教案")
-        session_logger.info(f"📚 总课时数: {len(variable_course_infos)}")
-        session_logger.info("=" * 50)
+        logging.info("=" * 50)
+        logging.info("🎯 开始批量生成教案")
+        logging.info(f"📚 总课时数: {len(variable_course_infos)}")
+        logging.info("=" * 50)
 
         complete_fixed_info = {**DEFAULT_FIXED_COURSE_INFO, **fixed_course_info}
         
@@ -489,7 +375,7 @@ def batch_generate():
         
         for i, lesson in enumerate(variable_course_infos, 1):
             lesson_id = str(lesson.get('id', ''))
-            session_logger.info(f"📖 正在生成课时 {i}/{total_lessons}: {lesson.get('课题名称', '未命名')}")
+            logging.info(f"📖 正在生成课时 {i}/{total_lessons}: {lesson.get('课题名称', '未命名')}")
             
             if lesson_id and lesson_id in uploaded_documents:
                 docs = uploaded_documents[lesson_id]
@@ -498,7 +384,7 @@ def batch_generate():
                         {'filename': doc['filename'], 'content': doc['content']}
                         for doc in docs
                     ]
-                    session_logger.info(f"📎 已关联 {len(docs)} 个参考文档: {', '.join([d['filename'] for d in docs])}")
+                    logging.info(f"📎 已关联 {len(docs)} 个参考文档: {', '.join([d['filename'] for d in docs])}")
             
             progress = int((i / total_lessons) * 100)
             topic = lesson.get('课题名称', f'课时{i}')
@@ -514,7 +400,7 @@ def batch_generate():
             
             course_info = {**complete_fixed_info, **lesson}
             
-            session_logger.info("📝 正在调用 AI 生成教案内容...")
+            logging.info("📝 正在调用 AI 生成教案内容...")
             
             template_path = os.path.join(BASE_DIR, 'moban.docx')
             success = generate_lesson_plan_doc(
@@ -531,14 +417,14 @@ def batch_generate():
                     'file_name': file_name,
                     'file_url': f'/download/{file_name}'
                 })
-                session_logger.success(f"✅ 课时 {i} 生成成功: {topic}")
+                logging.info(f"✅ 课时 {i} 生成成功: {topic}")
             else:
                 results.append({
                     'topic': topic,
                     'status': '失败',
                     'message': '文件未生成'
                 })
-                session_logger.error(f"❌ 课时 {i} 生成失败: {topic}")
+                logging.error(f"❌ 课时 {i} 生成失败: {topic}")
             
             update_session(session_id, {'results': results})
         
@@ -548,20 +434,16 @@ def batch_generate():
             'results': results
         })
         
-        session_logger.info("=" * 50)
-        session_logger.success(f"🎉 全部完成！成功 {len([r for r in results if r['status'] == '成功'])} 个，失败 {len([r for r in results if r['status'] == '失败'])} 个")
-        session_logger.info("=" * 50)
+        logging.info("=" * 50)
+        logging.info(f"🎉 全部完成！成功 {len([r for r in results if r['status'] == '成功'])} 个，失败 {len([r for r in results if r['status'] == '失败'])} 个")
+        logging.info("=" * 50)
         
         return jsonify({'success': True, 'results': results})
 
     except Exception as e:
-        session_logger.error(f"生成失败: {str(e)}")
+        logging.error(f"生成失败: {str(e)}")
         update_session(session_id, {'status': 'error', 'error': str(e)})
         return jsonify({'success': False, 'message': f'生成失败: {str(e)}'}), 500
-    finally:
-        # 清理 jiaoan logger 的 handler
-        jiaoan_logger = logging.getLogger('jiaoan')
-        jiaoan_logger.removeHandler(session_logger.handler)
 
 
 @app.route('/api/upload-document', methods=['POST'])
@@ -584,7 +466,7 @@ def upload_document():
         
         file_content = file.read()
         original_size = len(file_content)
-        print(f"接收到文件: {file.filename}, 原始大小: {original_size} 字节")
+        logging.info(f"接收到文件: {file.filename}, 原始大小: {original_size} 字节")
         
         safe_filename = f"{lesson_id}_{int(time.time())}_{file.filename}"
         file_path = os.path.join(UPLOAD_DIR, safe_filename)
@@ -593,18 +475,18 @@ def upload_document():
             f.write(file_content)
         
         saved_size = os.path.getsize(file_path)
-        print(f"文件已保存到: {file_path}")
-        print(f"保存后大小: {saved_size} 字节")
+        logging.info(f"文件已保存到: {file_path}")
+        logging.info(f"保存后大小: {saved_size} 字节")
         
         if saved_size != original_size:
-            print(f"警告: 文件大小不匹配! 原始: {original_size}, 保存: {saved_size}")
+            logging.warning(f"文件大小不匹配! 原始: {original_size}, 保存: {saved_size}")
             return jsonify({'success': False, 'message': '文件保存不完整'}), 500
         
         content = extract_document_content(file_path)
         
         if content is None:
             error_msg = f"❌ 文档解析失败: {file.filename} - 无法提取文档内容，请检查文件格式是否正确或文件是否损坏"
-            print(error_msg)
+            logging.error(error_msg)
             # 删除上传的文件
             try:
                 os.remove(file_path)
@@ -634,7 +516,7 @@ def upload_document():
         uploaded_documents[lesson_id].append(doc_info)
         
         success_msg = f"✅ 文档上传成功: {file.filename} (字符数: {len(content)})"
-        print(success_msg)
+        logging.info(success_msg)
         
         return jsonify({
             'success': True,
@@ -648,7 +530,7 @@ def upload_document():
         })
         
     except Exception as e:
-        print(f"上传文档失败: {str(e)}")
+        logging.error(f"上传文档失败: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': f'上传失败: {str(e)}'}), 500

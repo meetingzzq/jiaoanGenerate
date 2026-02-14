@@ -660,7 +660,7 @@ function App() {
             </div>
           </section>
 
-          {(generationResults.length > 0 || isGenerating) && (
+          {(generationResults.length > 0 || isGenerating || sessionStatus === 'generating' || sessionStatus === 'completed' || sessionStatus === 'error') && (
             <section className="status-section">
               <div className="tabs">
                 {isGenerating && (

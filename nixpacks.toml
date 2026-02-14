@@ -1,12 +1,6 @@
 providers = ["python"]
 
-[variables]
-PYPI_URL = "https://pypi.org/simple"
-
-[phases.setup]
-
 [phases.install]
-cmd = "pip install --user -r backend/requirements.txt"
 
 [start]
-cmd = "cd backend && /root/.local/bin/gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1"
+cmd = "cd backend && gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1"

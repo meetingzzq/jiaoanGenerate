@@ -9,9 +9,3 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-      - key: RENDER_DATA_DIR
-        value: /opt/render/project/data
-    disk:
-      name: data
-      mountPath: /opt/render/project/data
-      sizeGB: 1

@@ -23,5 +23,8 @@ ENV PYTHONUNBUFFERED=1
 # Expose the port
 EXPOSE $PORT
 
-# Run the application
-CMD ["python", "backend/api_server.py"]
+# Set working directory to backend
+WORKDIR /app/backend
+
+# Run the application with gunicorn
+CMD gunicorn api_server:app --bind 0.0.0.0:$PORT --timeout 300

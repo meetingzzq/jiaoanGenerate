@@ -213,8 +213,11 @@ def create_session():
 
 @app.route('/api/session/<session_id>', methods=['GET'])
 def get_session_status(session_id):
+    print(f"[DEBUG] 获取会话状态: {session_id}")
     session = get_session(session_id)
+    print(f"[DEBUG] 会话数据: {session}")
     if not session:
+        print(f"[DEBUG] 会话不存在")
         return jsonify({'success': False, 'message': '会话不存在'}), 404
     
     with log_queues_lock:
@@ -230,6 +233,7 @@ def get_session_status(session_id):
     if new_logs:
         add_log_to_session(session_id, new_logs)
     
+    print(f"[DEBUG] 返回会话状态: {session.get('status')}")
     return jsonify({
         'success': True,
         'session': session

@@ -70,10 +70,13 @@ function App() {
   }, []);
 
   const checkSessionStatus = async (sessionId) => {
+    console.log('检查会话状态:', sessionId);
     try {
       const response = await axios.get(`${API_BASE_URL}/api/session/${sessionId}`);
+      console.log('会话响应:', response.data);
       if (response.data.success) {
         const session = response.data.session;
+        console.log('会话状态:', session.status);
         setSessionStatus(session.status);
         setGenerationResults(session.results || []);
         
@@ -83,6 +86,7 @@ function App() {
         }
         
         if (session.status === 'generating') {
+          console.log('恢复生成状态');
           setIsGenerating(true);
           setCurrentTopic(session.current_topic || '');
           setActiveTab('loading');
@@ -93,7 +97,7 @@ function App() {
         }
       }
     } catch (error) {
-      console.log('Session not found or expired');
+      console.log('Session not found or expired', error);
       localStorage.removeItem('currentSessionId');
       localStorage.removeItem('sessionStartTime');
     }

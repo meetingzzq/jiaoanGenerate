@@ -475,7 +475,12 @@ def batch_generate():
         complete_fixed_info = {**DEFAULT_FIXED_COURSE_INFO, **fixed_course_info}
         
         total_lessons = len(variable_course_infos)
-        update_session(session_id, {'total_lessons': total_lessons})
+        # 设置初始的 current_topic
+        first_topic = variable_course_infos[0].get('课题名称', '课时1') if variable_course_infos else '准备中...'
+        update_session(session_id, {
+            'total_lessons': total_lessons,
+            'current_topic': first_topic
+        })
         
         results = []
         

@@ -1,12 +1,8 @@
 app = "jiaoan-gen-api"
 primary_region = "sin"
 
-[build]
-  builder = "heroku/buildpacks:20"
-
 [env]
   PORT = "8080"
-  PYTHON_VERSION = "3.11.0"
 
 [[services]]
   internal_port = 8080

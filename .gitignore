@@ -66,3 +66,24 @@ lerna-debug.log*
 
 # PyInstaller
 *.spec
+
+# Session files
+backend/sessions/*.json
+
+# Output files
+backend/output/*.docx
+
+# Prompt files
+backend/提示词_*.txt
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Data directory
+data/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak

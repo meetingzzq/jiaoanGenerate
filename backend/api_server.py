@@ -44,7 +44,11 @@ os.makedirs(SESSION_DIR, exist_ok=True)
 uploaded_documents = {}
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/api/*": {"origins": "*", "supports_credentials": True},
+    r"/download/*": {"origins": "*", "supports_credentials": True},
+    r"/*": {"origins": "*"}
+})
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 STATIC_DIR = os.path.join(BASE_DIR, 'frontend', 'dist')

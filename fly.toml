@@ -1,4 +1,4 @@
-app = "jiaoan-backend"
+app = "jiaoan-gen-api"
 primary_region = "sin"
 
 [build]
